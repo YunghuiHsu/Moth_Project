@@ -22,7 +22,7 @@
         - yolo讀圖預設是使用PIL，要注意可能有些圖片在作業系統中被轉正過，使用PIL的話會讀取到轉正的EXIF資訊 
 
 ### 流程:
-1. 先使用原資料跑一遍yolov4
+1. 先使用已針對蛾類影像訓練好的yolo4模型取得預測的boundingbox(yolo4/predict.py)
     - 獲得裁切的圖片與Bounding Box座標點
 2. 檢視裁切結果
     - 成大(CARS)
