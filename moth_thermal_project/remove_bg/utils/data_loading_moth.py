@@ -1,13 +1,16 @@
 import logging
 from os import listdir
 from os.path import splitext
+import random
 from pathlib import Path
+from imgaug.augmenters.geometric import Rotate, TranslateX, TranslateY
 
 import numpy as np
 import torch
 from PIL import Image
 from torch.utils.data import Dataset
 from torchvision.transforms import transforms
+import torchvision.transforms.functional as F
 from imgaug import augmenters as iaa
 
 
@@ -19,21 +22,56 @@ def charm(aug): return iaa.Sometimes(0.33, aug)
 def seldom(aug): return iaa.Sometimes(0.2, aug)
 
 
-augseq_shape = iaa.Sequential(
-    [
-        iaa.Fliplr(0.5),
-        most_of_the_time(
-            iaa.Affine(
-                # scale images to 90-110% of their size, individually per axis
-                scale={"x": (0.9, 1.1), "y": (0.9, 1.1)},
-                translate_percent={"x": (-0.1, 0.1), "y": (-0.1, 0.1)},
-                rotate=(-15, 15),  # rotate by -10 to +10 degrees
-                shear=(-10, 10),
-                mode='constant',
-            )
-        ),
-    ]
-)
+# augmentation config
+angle = 15
+scale = [0.9, 1.1]
+translate = [-0.1, 0.1]
+shear = 15
+brightness = 0.3
+contrast = 0.3
+
+
+def change_shape(img, mask):
+    aug_flip = iaa.Fliplr(1)
+    if random.random() > 0.5:
+        img = aug_flip.augment_images(img)
+        mask = aug_flip.augment_images(mask)
+
+    aug_seq = iaa.Sequential([
+        # rotate by -10 to +10 degrees
+        iaa.Rotate(random.uniform(-1, 1)*angle),
+        iaa.Affine(shear=random.uniform(-1, 1)*angle),
+        # scale images to 90-110% of their size, individually per axis
+        iaa.Affine(scale=random.uniform(*scale)),
+        iaa.Affine(translate_percent=random.uniform(*translate))
+    ])
+    img = aug_seq.augment_images(img)
+    mask = aug_seq.augment_images(mask)
+    return img, mask
+
+
+# add coarse(rectangle shape) noise
+# size_percent : drop them on an image with min - max% percent of the original size
+aug_noise = iaa.CoarseDropout(p=(0.005, 0.05), size_percent=(.01, .5))
+
+aug_color = iaa.Sequential([
+    iaa.Multiply((0.9, 1.1), per_channel=0.1),
+    iaa.LinearContrast((0.9, 1.1), per_channel=0.1),
+])
+
+
+def add_noise(img):
+    img = img.transpose((1, 2, 0))  # (c, h, w) > (h, w, c)
+    img = aug_noise.augment_image((img*255).astype('uint8'))
+    img = img.transpose((2, 0, 1))  # (h, w, c) > (c, h, w)
+    return img/255
+
+
+def change_color(img):
+    img = img.transpose((1, 2, 0))  # (c, h, w) > (h, w, c)
+    img = aug_color.augment_image((img*255).astype('uint8'))
+    img = img.transpose((2, 0, 1))  # (h, w, c) > (c, h, w)
+    return img/255
 
 
 class BasicDataset(Dataset):
@@ -54,25 +92,26 @@ class BasicDataset(Dataset):
     def __len__(self):
         return len(self.ids)
 
-    @classmethod
+    @ classmethod
     def preprocess(cls, pil_img, scale, is_mask):
         w, h = pil_img.size
         newW, newH = int(scale * w), int(scale * h)
         assert newW > 0 and newH > 0, 'Scale is too small, resized images would have no pixel'
         pil_img = pil_img.resize((newW, newH))
-        img_ndarray = np.asarray(pil_img)
+        img_ndarray = np.asarray(pil_img)  # (w, h, c))
 
         if img_ndarray.ndim == 2 and not is_mask:
-            img_ndarray = img_ndarray[np.newaxis, ...]
+            img_ndarray = img_ndarray[np.newaxis, ...]  # (w, h) > (1, w, h)
         elif not is_mask:
-            img_ndarray = img_ndarray.transpose((2, 0, 1))
+            img_ndarray = img_ndarray.transpose(
+                (2, 0, 1))  # (w, h, c) >  (c, w, h)
 
         if not is_mask:
-            img_ndarray = img_ndarray / 255
+            img_ndarray = img_ndarray / 255  # dtype: 'uint8' > 'float64'
 
         return img_ndarray
 
-    @classmethod
+    @ classmethod
     def load(cls, filename):
         ext = splitext(filename)[1]
         if ext in ['.npz', '.npy']:
@@ -110,22 +149,16 @@ class BasicDataset(Dataset):
 
 
 class CarvanaDataset(BasicDataset):
-    def __init__(self, images_dir, masks_dir, scale=1.0):
+    def __init__(self, images_dir, masks_dir, scale):
         super().__init__(images_dir, masks_dir, scale, mask_suffix='_mask')
 
 
 class TransformDataset(BasicDataset):
     def __init__(self, images_dir, masks_dir, scale=1.0, mask_suffix='', aug=True):
-        # super().__init__(images_dir, masks_dir, scale, mask_suffix='')
-        super(TransformDataset, self).__init__()
-        self.images_dir = Path(images_dir)
-        self.masks_dir = Path(masks_dir)
-        assert 0 < scale <= 1, 'Scale must be between 0 and 1'
-        self.scale = scale
-        self.mask_suffix = mask_suffix
+        super().__init__(images_dir, masks_dir, scale, mask_suffix)
+
         self.aug = aug
-        print('__init__ self.aug :', self.aug)
-    
+
     def __getitem__(self, idx):
         name = self.ids[idx]
         mask_file = list(self.masks_dir.glob(name + self.mask_suffix + '.*'))
@@ -145,17 +178,10 @@ class TransformDataset(BasicDataset):
         img_ = self.preprocess(pil_img, self.scale, is_mask=False)
         mask_ = self.preprocess(pil_mask, self.scale, is_mask=True)
 
-        print('__getitem__ self.aug :', self.aug)
-
         if self.aug:
-            # img = augseq_all.augment_images(img_)
-            # images_aug = seq(images=images)
-            img = augseq_shape(img_)
-            mask = augseq_shape(mask_)
-
-            # img , mask = shape(img_, mask_)
-            # img = color(img)
-            # img = noise(img)
+            img, mask = change_shape(img_, mask_)
+            img = add_noise(img)
+            img = change_color(img)
 
         else:
             img = img_
