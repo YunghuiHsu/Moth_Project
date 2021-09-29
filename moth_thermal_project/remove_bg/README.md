@@ -33,7 +33,7 @@
 - 影像讀取一率使用skimage.io
     - 最後的裁切圖可根據yolo跑出的Bounding Box座標點調整裁切範圍
         - yolo讀圖預設是使用PIL，要注意可能有些圖片在作業系統中被轉正過，使用PIL的話會讀取到轉正的EXIF資訊 
-<br>
+
 ### 流程:
 1. 先使用原資料跑一遍yolov4
     - 獲得裁切的圖片與Bounding Box座標點
