@@ -15,7 +15,7 @@
         -　[[分享]Ubuntu解壓縮zip檔亂碼問題快速解法](https://blog.impochun.com/ubuntu-unzip-traditional-chinese-garbled-text-solution/)
     
 
-# 一、物件偵測(object detection)，裁切抓取出主體(蛾類標本)
+## 一、物件偵測(object detection)，裁切抓取出主體(蛾類標本)
 - 使用針對鱗翅目訓練好的yolov4模型
 - 影像讀取一率使用skimage.io
     - 最後的裁切圖可根據yolo跑出的Bounding Box座標點調整裁切範圍
