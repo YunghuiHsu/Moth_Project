@@ -1,4 +1,5 @@
 import logging
+import os
 from os import listdir
 from os.path import splitext
 import random
@@ -8,25 +9,17 @@ from imgaug.augmenters.geometric import Rotate, TranslateX, TranslateY
 import numpy as np
 import torch
 from PIL import Image
+import skimage.io as io
 from torch.utils.data import Dataset
 from torchvision.transforms import transforms
 import torchvision.transforms.functional as F
 from imgaug import augmenters as iaa
 
-
-def sometimes(aug): return iaa.Sometimes(0.5, aug)
-def most_of_the_time(aug): return iaa.Sometimes(0.9, aug)
-def usually(aug): return iaa.Sometimes(0.75, aug)
-def always(aug): return iaa.Sometimes(1, aug)
-def charm(aug): return iaa.Sometimes(0.33, aug)
-def seldom(aug): return iaa.Sometimes(0.2, aug)
-
-
 # augmentation config
-angle = 15
-scale = [0.9, 1.1]
-translate = [-0.1, 0.1]
-shear = 15
+angle = 10
+scale = [0.95, 1.05]
+translate = [-0.05, 0.05]
+shear = 10
 brightness = 0.3
 contrast = 0.3
 
@@ -153,21 +146,42 @@ class CarvanaDataset(BasicDataset):
         super().__init__(images_dir, masks_dir, scale, mask_suffix='_mask')
 
 
-class TransformDataset(BasicDataset):
-    def __init__(self, images_dir, masks_dir, scale=1.0, mask_suffix='', aug=True):
-        super().__init__(images_dir, masks_dir, scale, mask_suffix)
+class MothDataset(Dataset):
+    """
+    Required directory configuration:
+        data_dir
+        ├─ img/
+        └─ mask/
+    images_list : path of imgs
+    Requiring the same name of image and mask.
+    """
+    def __init__(self, images_list, masks_list, mask_suffix='', data_aug=True):
 
-        self.aug = aug
+        self.images_list = images_list
+        self.masks_list = masks_list
+        assert len(images_list) == len(masks_list), 'number of masks must be same a number of imgs!'
+        
+        self.mask_suffix = mask_suffix
+        self.data_aug = data_aug
+
+
+        self.ids = [os.path.split(path)[1] for path in self.images_list if not os.path.split(path)[1].startswith('.')]
+        if not self.ids:
+            raise RuntimeError(
+                f'No input file found in {images_dir}, make sure you put your images there')
+        logging.info(f'Creating dataset with {len(self.ids)} examples')
+
+    def __len__(self):
+        return len(self.img_list)
 
     def __getitem__(self, idx):
-        name = self.ids[idx]
-        mask_file = list(self.masks_dir.glob(name + self.mask_suffix + '.*'))
-        img_file = list(self.images_dir.glob(name + '.*'))
+        io.imreadself.img_list[index])
+        img = Image.open(self.img_list[idx]).resize(self.input_size)
+        img = img.convert('RGB')
+        mask = Image.open(self.mask_list[index]).resize(self.input_size)
 
-        assert len(
-            mask_file) == 1, f'Either no mask or multiple masks found for the ID {name}: {mask_file}'
-        assert len(
-            img_file) == 1, f'Either no image or multiple images found for the ID {name}: {img_file}'
+
+
         pil_mask = self.load(mask_file[0])
         pil_img = self.load(img_file[0])
         pil_img = pil_img.convert('RGB')
@@ -178,7 +192,7 @@ class TransformDataset(BasicDataset):
         img_ = self.preprocess(pil_img, self.scale, is_mask=False)
         mask_ = self.preprocess(pil_mask, self.scale, is_mask=True)
 
-        if self.aug:
+        if self.data_aug:
             img, mask = change_shape(img_, mask_)
             img = add_noise(img)
             img = change_color(img)
