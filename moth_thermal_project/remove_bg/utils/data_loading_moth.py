@@ -1,5 +1,4 @@
 import logging
-import os
 from os import listdir
 from os.path import splitext
 import random
@@ -9,62 +8,65 @@ from imgaug.augmenters.geometric import Rotate, TranslateX, TranslateY
 import numpy as np
 import torch
 from PIL import Image
-import skimage.io as io
 from torch.utils.data import Dataset
 from torchvision.transforms import transforms
 import torchvision.transforms.functional as F
 from imgaug import augmenters as iaa
 
+# =========================================================================================
 # augmentation config
-angle = 10
+angle = 15
 scale = [0.95, 1.05]
 translate = [-0.05, 0.05]
-shear = 10
-brightness = 0.3
-contrast = 0.3
+shear = 15
+brightness = (0.9, 1.1)
+contrast = (0.9, 1.1)
 
+# flip horizontal
+aug_flip = iaa.Fliplr(1)
 
-def change_shape(img, mask):
-    aug_flip = iaa.Fliplr(1)
-    if random.random() > 0.5:
-        img = aug_flip.augment_images(img)
-        mask = aug_flip.augment_images(mask)
-
-    aug_seq = iaa.Sequential([
-        # rotate by -10 to +10 degrees
-        iaa.Rotate(random.uniform(-1, 1)*angle),
-        iaa.Affine(shear=random.uniform(-1, 1)*angle),
-        # scale images to 90-110% of their size, individually per axis
-        iaa.Affine(scale=random.uniform(*scale)),
-        iaa.Affine(translate_percent=random.uniform(*translate))
-    ])
-    img = aug_seq.augment_images(img)
-    mask = aug_seq.augment_images(mask)
-    return img, mask
-
+# shape transform
+aug_seq = iaa.Sequential([
+    # rotate by -10 to +10 degrees
+    iaa.Rotate(random.uniform(-1, 1)*angle),
+    iaa.Affine(shear=random.uniform(-1, 1)*angle),
+    # scale images to 90-110% of their size, individually per axis
+    iaa.Affine(scale=random.uniform(*scale)),
+    iaa.Affine(translate_percent=random.uniform(*translate))
+])
 
 # add coarse(rectangle shape) noise
 # size_percent : drop them on an image with min - max% percent of the original size
 aug_noise = iaa.CoarseDropout(p=(0.005, 0.05), size_percent=(.01, .5))
 
 aug_color = iaa.Sequential([
-    iaa.Multiply((0.9, 1.1), per_channel=0.1),
-    iaa.LinearContrast((0.9, 1.1), per_channel=0.1),
+    iaa.Multiply(brightness, per_channel=0.1),
+    iaa.LinearContrast(contrast, per_channel=0.1)
 ])
 
-
-def add_noise(img):
-    img = img.transpose((1, 2, 0))  # (c, h, w) > (h, w, c)
-    img = aug_noise.augment_image((img*255).astype('uint8'))
-    img = img.transpose((2, 0, 1))  # (h, w, c) > (c, h, w)
-    return img/255
+# ---------------------------------------------------------------------------------
 
 
-def change_color(img):
-    img = img.transpose((1, 2, 0))  # (c, h, w) > (h, w, c)
-    img = aug_color.augment_image((img*255).astype('uint8'))
-    img = img.transpose((2, 0, 1))  # (h, w, c) > (c, h, w)
-    return img/255
+def img_aug_shape(img, mask):
+    if random.random() > 0.5:
+        img = aug_flip.augment_images(img)
+        mask = aug_flip.augment_images(mask)
+
+    img = aug_seq.augment_images(img)
+    mask = aug_seq.augment_images(mask)
+    return img, mask
+
+
+def img_aug_color_noise(img):
+    img_ = img.transpose((1, 2, 0))  # (c, h, w) > (h, w, c)
+    img_ = (img_*255).astype('uint8')
+
+    img_ = aug_noise.augment_image(img_)
+    img_ = aug_color.augment_image(img_)
+
+    img_ = img_.transpose((2, 0, 1))  # (h, w, c) > (c, h, w)
+    return img_/255
+# =========================================================================================
 
 
 class BasicDataset(Dataset):
@@ -146,42 +148,21 @@ class CarvanaDataset(BasicDataset):
         super().__init__(images_dir, masks_dir, scale, mask_suffix='_mask')
 
 
-class MothDataset(Dataset):
-    """
-    Required directory configuration:
-        data_dir
-        ├─ img/
-        └─ mask/
-    images_list : path of imgs
-    Requiring the same name of image and mask.
-    """
-    def __init__(self, images_list, masks_list, mask_suffix='', data_aug=True):
+class MothDataset(BasicDataset):
+    def __init__(self, images_dir, masks_dir, scale=1.0, mask_suffix='', aug=True):
+        super().__init__(images_dir, masks_dir, scale, mask_suffix)
 
-        self.images_list = images_list
-        self.masks_list = masks_list
-        assert len(images_list) == len(masks_list), 'number of masks must be same a number of imgs!'
-        
-        self.mask_suffix = mask_suffix
-        self.data_aug = data_aug
-
-
-        self.ids = [os.path.split(path)[1] for path in self.images_list if not os.path.split(path)[1].startswith('.')]
-        if not self.ids:
-            raise RuntimeError(
-                f'No input file found in {images_dir}, make sure you put your images there')
-        logging.info(f'Creating dataset with {len(self.ids)} examples')
-
-    def __len__(self):
-        return len(self.img_list)
+        self.aug = aug
 
     def __getitem__(self, idx):
-        io.imreadself.img_list[index])
-        img = Image.open(self.img_list[idx]).resize(self.input_size)
-        img = img.convert('RGB')
-        mask = Image.open(self.mask_list[index]).resize(self.input_size)
+        name = self.ids[idx]
+        mask_file = list(self.masks_dir.glob(name + self.mask_suffix + '.*'))
+        img_file = list(self.images_dir.glob(name + '.*'))
 
-
-
+        assert len(
+            mask_file) == 1, f'Either no mask or multiple masks found for the ID {name}: {mask_file}'
+        assert len(
+            img_file) == 1, f'Either no image or multiple images found for the ID {name}: {img_file}'
         pil_mask = self.load(mask_file[0])
         pil_img = self.load(img_file[0])
         pil_img = pil_img.convert('RGB')
@@ -192,10 +173,9 @@ class MothDataset(Dataset):
         img_ = self.preprocess(pil_img, self.scale, is_mask=False)
         mask_ = self.preprocess(pil_mask, self.scale, is_mask=True)
 
-        if self.data_aug:
-            img, mask = change_shape(img_, mask_)
-            img = add_noise(img)
-            img = change_color(img)
+        if self.aug:
+            img, mask = img_aug_shape(img_, mask_)
+            img = img_aug_color_noise(img)
 
         else:
             img = img_
