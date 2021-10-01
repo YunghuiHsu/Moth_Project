@@ -159,6 +159,5 @@ def early_stop(valid_loss, best_loss,  trigger_times, patience):
         print('  Early stopping trigger times:', trigger_times)
     else:
         trigger_times = 0
-    if trigger_times >= patience:
-        print('  Early stopping!')
+
     return trigger_times
