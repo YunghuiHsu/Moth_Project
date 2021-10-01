@@ -1,4 +1,5 @@
 import logging
+import os
 from os import listdir
 from os.path import splitext
 import random
@@ -8,64 +9,62 @@ from imgaug.augmenters.geometric import Rotate, TranslateX, TranslateY
 import numpy as np
 import torch
 from PIL import Image
+import skimage.io as io
+from torch._C import dtype
 from torch.utils.data import Dataset
 from torchvision.transforms import transforms
 import torchvision.transforms.functional as F
 from imgaug import augmenters as iaa
 
 # =========================================================================================
-# augmentation config
-angle = 15
-scale = [0.95, 1.05]
-translate = [-0.05, 0.05]
-shear = 15
-brightness = (0.9, 1.1)
-contrast = (0.9, 1.1)
-
-# flip horizontal
-aug_flip = iaa.Fliplr(1)
-
-# shape transform
-aug_seq = iaa.Sequential([
-    # rotate by -10 to +10 degrees
-    iaa.Rotate(random.uniform(-1, 1)*angle),
-    iaa.Affine(shear=random.uniform(-1, 1)*angle),
-    # scale images to 90-110% of their size, individually per axis
-    iaa.Affine(scale=random.uniform(*scale)),
-    iaa.Affine(translate_percent=random.uniform(*translate))
-])
-
-# add coarse(rectangle shape) noise
-# size_percent : drop them on an image with min - max% percent of the original size
-aug_noise = iaa.CoarseDropout(p=(0.005, 0.05), size_percent=(.01, .5))
-
-aug_color = iaa.Sequential([
-    iaa.Multiply(brightness, per_channel=0.1),
-    iaa.LinearContrast(contrast, per_channel=0.1)
-])
-
-# ---------------------------------------------------------------------------------
+# img augmentation
 
 
 def img_aug_shape(img, mask):
-    if random.random() > 0.5:
-        img = aug_flip.augment_images(img)
-        mask = aug_flip.augment_images(mask)
+    '''
+    img.shape == (h, w, c) or (h,w) and img.dtype : uint8
+    '''
+    # flip horizontal
+    aug_flip = iaa.Fliplr(1)
 
-    img = aug_seq.augment_images(img)
-    mask = aug_seq.augment_images(mask)
+    # shape transform
+    aug_seq = iaa.Sequential([
+        # rotate by -10 to +10 degrees
+        iaa.Rotate(random.uniform(-1, 1)*15),
+        iaa.Affine(shear=random.uniform(-1, 1)*15),
+        # scale images to 90-110% of their size, individually per axis
+        iaa.Affine(scale=random.uniform(*[0.95, 1.05])),
+        iaa.Affine(translate_percent=random.uniform(*[-0.05, 0.05]))
+    ])
+    if random.random() > 0.5:
+        img = aug_flip.augment_image(img)
+        mask = aug_flip.augment_image(mask)
+
+    img = aug_seq.augment_image(img)
+    mask = aug_seq.augment_image(mask)
     return img, mask
 
 
 def img_aug_color_noise(img):
-    img_ = img.transpose((1, 2, 0))  # (c, h, w) > (h, w, c)
-    img_ = (img_*255).astype('uint8')
+    '''
+    img.shape == (n, h, w, c) or (h, w) and img.dtype : uint8
+    '''
+    # add coarse(rectangle shape) noise
+    # size_percent : drop them on an image with min - max% percent of the original size
+    aug_noise = iaa.CoarseDropout(p=(0.005, 0.05), size_percent=(.01, .5), per_channel=0.5)
 
-    img_ = aug_noise.augment_image(img_)
-    img_ = aug_color.augment_image(img_)
+    aug_color = iaa.Sequential([
+        iaa.Multiply((0.9, 1.1), per_channel=0.05),
+        iaa.LinearContrast((0.9, 1.1), per_channel=0.1)
+    ])
+    # img_ = img.transpose((1, 2, 0))  # (c, h, w) > (h, w, c)
+    # img_ = (img*255).astype('uint8')
 
-    img_ = img_.transpose((2, 0, 1))  # (h, w, c) > (c, h, w)
-    return img_/255
+    img = aug_noise.augment_image(img)
+    img = aug_color.augment_image(img)
+
+    # img_ = img_.transpose((2, 0, 1))  # (h, w, c) > (c, h, w)
+    return img
 # =========================================================================================
 
 
@@ -77,15 +76,15 @@ class BasicDataset(Dataset):
         self.scale = scale
         self.mask_suffix = mask_suffix
 
-        self.ids = [splitext(file)[0] for file in listdir(
+        self.names = [splitext(file)[0] for file in listdir(
             images_dir) if not file.startswith('.')]
-        if not self.ids:
+        if not self.names:
             raise RuntimeError(
                 f'No input file found in {images_dir}, make sure you put your images there')
-        logging.info(f'Creating dataset with {len(self.ids)} examples')
+        logging.info(f'Creating dataset with {len(self.names)} examples')
 
     def __len__(self):
-        return len(self.ids)
+        return len(self.names)
 
     @ classmethod
     def preprocess(cls, pil_img, scale, is_mask):
@@ -95,11 +94,12 @@ class BasicDataset(Dataset):
         pil_img = pil_img.resize((newW, newH))
         img_ndarray = np.asarray(pil_img)  # (w, h, c))
 
-        if img_ndarray.ndim == 2 and not is_mask:
-            img_ndarray = img_ndarray[np.newaxis, ...]  # (w, h) > (1, w, h)
+        if img_ndarray.ndim == 2 and not is_mask:       # (w, h) > (1, w, h)
+            img_ndarray = img_ndarray[np.newaxis, ...]
+        # (w, h, c) >  (c, w, h)
         elif not is_mask:
             img_ndarray = img_ndarray.transpose(
-                (2, 0, 1))  # (w, h, c) >  (c, w, h)
+                (2, 0, 1))
 
         if not is_mask:
             img_ndarray = img_ndarray / 255  # dtype: 'uint8' > 'float64'
@@ -117,7 +117,7 @@ class BasicDataset(Dataset):
             return Image.open(filename)
 
     def __getitem__(self, idx):
-        name = self.ids[idx]
+        name = self.names[idx]
         mask_file = list(self.masks_dir.glob(name + self.mask_suffix + '.*'))
         img_file = list(self.images_dir.glob(name + '.*'))
 
@@ -142,52 +142,76 @@ class BasicDataset(Dataset):
             'mask': mask
         }
 
+class MothDataset(Dataset):
+    def __init__(self, imgs_paths: list, masks_paths: list,
+                 input_size: tuple = (256, 256), output_size: tuple = (256, 256),
+                 mask_suffix: str = '', img_aug: bool = True):
+        self.imgs_paths = imgs_paths
+        self.masks_paths = masks_paths
+        self.input_size = input_size
+        self.output_size = output_size
+        self.img_aug = img_aug
 
-class CarvanaDataset(BasicDataset):
-    def __init__(self, images_dir, masks_dir, scale):
-        super().__init__(images_dir, masks_dir, scale, mask_suffix='_mask')
+        self.names = [os.path.basename(path).split('.')[0] for path in imgs_paths
+                      if not os.path.basename(path).startswith('.')]
+        if not self.names:
+            raise RuntimeError(
+                f'No input file found in {imgs_paths}, make sure you put your images there')
+        logging.info(f'Creating dataset with {len(self.names)} examples')
 
+        assert len(imgs_paths) == len(
+            masks_paths), f'number of masks: {len(masks_paths)} need to be same as images: {len(imgs_paths)}'
 
-class MothDataset(BasicDataset):
-    def __init__(self, images_dir, masks_dir, scale=1.0, mask_suffix='', aug=True):
-        super().__init__(images_dir, masks_dir, scale, mask_suffix)
+    def __len__(self):
+        return len(self.names)
 
-        self.aug = aug
+    @ classmethod
+    def preprocess(cls, img_ndarray, input_size, output_size, is_mask):
+        '''
+        ndarray to tensor
+
+        '''
+        # resize
+        if input_size != output_size:
+            img_ndarray = np.asarray(
+                Image.fromarray(img_ndarray).resize(output_size), dtype=np.uint8)
+
+        # (w, h) > (1, w, h)
+        # (w, h, c) >  (c, w, h)
+        if img_ndarray.ndim == 2 and not is_mask:
+            img_ndarray = img_ndarray[np.newaxis, ...]
+        elif not is_mask:
+            img_ndarray = img_ndarray.transpose(
+                (2, 0, 1))
+
+        if not is_mask:    # dtype: np.uint8 > tensor.float32
+            img_ndarray = img_ndarray / 255
+            img_tensor = torch.as_tensor(
+                img_ndarray.copy()).float().contiguous()
+        elif is_mask:              # dtype: np.uint8 > tensor.int64
+            img_tensor = torch.as_tensor(
+                img_ndarray.copy()).long().contiguous()
+        return img_tensor
 
     def __getitem__(self, idx):
-        name = self.ids[idx]
-        mask_file = list(self.masks_dir.glob(name + self.mask_suffix + '.*'))
-        img_file = list(self.images_dir.glob(name + '.*'))
+        name = self.names[idx]
+        img_ = io.imread(self.imgs_paths[idx])   # (h, w, c)
+        # (h, w),  dtype = float64
+        mask_ = io.imread(self.masks_paths[idx], as_gray=True)   # as_gray=True > load as (h, w),  [0, 1], dtype = float64 
+        mask_ = (mask_*255).astype('uint8')                      #  [0, 1], dtype = float64  >　[0, 255], dtype = uint8 
 
-        assert len(
-            mask_file) == 1, f'Either no mask or multiple masks found for the ID {name}: {mask_file}'
-        assert len(
-            img_file) == 1, f'Either no image or multiple images found for the ID {name}: {img_file}'
-        pil_mask = self.load(mask_file[0])
-        pil_img = self.load(img_file[0])
-        pil_img = pil_img.convert('RGB')
-
-        assert pil_img.size == pil_mask.size, \
-            'Image and mask {name} should be the same size, but are {img.size} and {mask.size}'
-
-        img_ = self.preprocess(pil_img, self.scale, is_mask=False)
-        mask_ = self.preprocess(pil_mask, self.scale, is_mask=True)
-
-        if self.aug:
-            img, mask = img_aug_shape(img_, mask_)
-            img = img_aug_color_noise(img)
-
-        else:
-            img = img_
-            mask = mask_
+        if self.img_aug:
+            # img.shape == (h, w, c) or (h, w) and img.dtype : uint8
+            img_, mask_ = img_aug_shape(img_, mask_)
+            img_ = img_aug_color_noise(img_)
 
         # ndarray to tensor
-        img = torch.as_tensor(img.copy()).float().contiguous()
-        mask = torch.as_tensor(mask.copy()).long().contiguous()
+        img = self.preprocess(img_, self.input_size, self.output_size, False)
+        mask = self.preprocess(mask_, self.input_size, self.output_size, True)
 
         return {
             'image': img,
-            'mask': mask
+            'mask': mask,
         }
 
 # ===================================================================================================
