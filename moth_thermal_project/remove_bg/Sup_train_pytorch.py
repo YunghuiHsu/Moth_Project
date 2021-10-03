@@ -5,6 +5,7 @@ import sys
 import os
 from pathlib import Path
 import numpy as np
+import pandas as pd
 from datetime import datetime
 from PIL import Image
 import skimage.io as io
@@ -22,31 +23,35 @@ from utils.data_loading_moth import MothDataset
 from utils.dice_score import dice_loss
 from evaluate import evaluate
 from unet import UNet
+from utils.utils import early_stop, plt_learning_curve
 
 # =======================================================================================================
 # def get_args():
 parser = argparse.ArgumentParser(
     description='Train the UNet on images and target masks')
 
-### enviroment
-parser.add_argument('--SAVEDIR', dest='SAVEDIR', default='model/Unet_rmbg') # 'Unet_5comps', #Unet_rmbg
+# enviroment
 parser.add_argument('--gpu', dest='gpu', default='0')
 parser.add_argument("--save_epoch", '-save_e', type=int,
                     default=1, help="save checkpoint per epoch")
 
-### data
-parser.add_argument('--XX_DIR', dest='XX_DIR', default='./data/data_for_Sup_train/imgs/')
-parser.add_argument('--YY_DIR', dest='YY_DIR', default='./data/data_for_Sup_train/masks/')
+# data
+parser.add_argument('--XX_DIR', dest='XX_DIR',
+                    default='./data/data_for_Sup_train/imgs/')
+parser.add_argument('--YY_DIR', dest='YY_DIR',
+                    default='./data/data_for_Sup_train/masks/')
+parser.add_argument('--SAVEDIR', dest='SAVEDIR',
+                    default='model/Unet_rmbg')  # Unet_rmbg
 
 parser.add_argument('--image_input_size', '-sizein_', dest='size_in',
                     type=str, default='256,256', help='image size input')
-parser.add_argument('--image_output_size', '-size_out', dest='size_in',
+parser.add_argument('--image_output_size', '-size_out', dest='size_out',
                     type=str, default='256,256', help='image size output')
 parser.add_argument('--image-c', dest='im_c', default=3, type=int)
 parser.add_argument('--img_type', '-', dest='img_type',
                     metavar='TYPE', type=str, default='.png', help='image type: .png, .jpg ...')
 
-### model
+# model
 parser.add_argument('--epochs', '-e', metavar='E',
                     type=int, default=100, help='Number of epochs')
 parser.add_argument('--batch-size', '-b', dest='batch_size',
@@ -65,20 +70,25 @@ parser.add_argument('--amp', action='store_true',
 args = parser.parse_args()
 # =======================================================================================================
 
+
 def size_str_tuple(input):
-    str_ = input.replace(' ','').split(',')
-    h, w  = int(str_[0]), int(str_[1])
+    str_ = input.replace(' ', '').split(',')
+    h, w = int(str_[0]), int(str_[1])
     return h, w
+
 
 input_size = size_str_tuple(args.size_in)
 output_size = size_str_tuple(args.size_out)
 
 dir_img = Path(args.XX_DIR)
 dir_mask = Path(args.YY_DIR)
-time_ = datetime.now().strftime("%y%m%d%H%M")
-dir_checkpoint = Path(f'./checkpoints/{time_}')
-dir_benchmarks = Path('./data/data_for_Sup_train/benchmarks/')
 
+time_ = datetime.now().strftime("%y%m%d_%H%M")
+dir_checkpoint = Path(f'{args.SAVEDIR}/{time_}')
+# dir_checkpoint = Path(f'./checkpoints/{time_}')
+dir_checkpoint.mkdir(parents=True, exist_ok=True)
+
+dir_benchmarks = Path('./data/data_for_Sup_train/benchmarks/')
 
 # ----------------------------------------------------------------------------
 # convert masks rgb(w,h,c)  to grey(w,h)
@@ -120,11 +130,36 @@ def train_net(net,
               amp: bool = False
               ):
 
+    # Save log
+    def save_log():
+        summary_save = f'{args.SAVEDIR}/training_summary_pytorch.csv'
+
+        # save into dictionary
+        sav = vars(args)
+        # sav['test_loss'] = test_loss
+        # sav['Dice loss'] = mIoU
+        sav['validation Dice'] = val_score
+        sav['dir_checkpoint'] = dir_checkpoint
+        sav['best_val_loss'] = best_val_loss
+        sav['best_epoch'] = best_epoch
+
+        # Append into summary files
+        dnew = pd.DataFrame(sav, index=[0])
+        if os.path.exists(summary_save):
+            dori = pd.read_csv(summary_save)
+            dori = pd.concat([dori, dnew])
+            dori.to_csv(summary_save, index=False)
+        else:
+            dnew.to_csv(summary_save, index=False)
+
+        print(summary_save)
+
     # Prepare dataset, Split into train / validation partitions
     img_paths = list(dir_img.glob('*' + img_type))
     mask_paths = list(dir_mask.glob('*' + img_type))
 
-    assert len(img_paths) == len(mask_paths), f'number imgs: {len(img_paths)} and masks: {len(_paths)} need equal '
+    assert len(img_paths) == len(
+        mask_paths), f'number imgs: {len(img_paths)} and masks: {len(mask_paths)} need equal '
 
     X_train, X_valid, y_train, y_valid = train_test_split(
         img_paths, mask_paths, test_size=val_percent, random_state=1)
@@ -155,7 +190,7 @@ def train_net(net,
         Training size:   {n_train}
         Validation size: {n_val}
         Checkpoints:     {save_checkpoint}
-        Device:          {device.type}
+        Device:          {device}
         input_size:      {input_size}
         output_size:     {output_size}
         Mixed Precision: {amp}
@@ -165,16 +200,28 @@ def train_net(net,
     # optimizer = optim.RMSprop(net.parameters(), lr=learning_rate, weight_decay=1e-8, momentum=0.9)
     optimizer = optim.Adam(
         net.parameters(), lr=learning_rate, weight_decay=1e-8)
-    # scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=10)  # goal: maximize Dice score
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, 'max', patience=30)  # goal: maximize Dice score
     # grad_scaler = torch.cuda.amp.GradScaler(enabled=amp)
     criterion = nn.CrossEntropyLoss()
     global_step = 0
 
+    # Parameters that should be stored.
+    params = {}
+    params['train_loss'] = []
+    params['valid_loss'] = []
+    # params['train_score']=[]
+    params['valid_score'] = []
+
     # 5. Begin training
+    best_loss = 1e10
+    patience = 100
+    trigger_times = 0
     for epoch in range(epochs):
         net.train()
         epoch_loss = 0
         with tqdm(total=n_train, desc=f'Epoch {epoch + 1}/{epochs}', unit='img') as pbar:
+            train_loss_collector = []
             for batch in train_loader:
                 images = batch['image']
                 true_masks = batch['mask']
@@ -191,7 +238,7 @@ def train_net(net,
                 masks_pred = net(images)
                 print('masks_pred : ', masks_pred.shape)
                 print('true_masks : ', true_masks.shape)
-                loss_train = criterion(masks_pred, true_masks) \
+                train_loss_batch = criterion(masks_pred, true_masks) \
                     + dice_loss(F.softmax(masks_pred, dim=1).float(),
                                 F.one_hot(true_masks, net.n_classes).permute(
                         0, 3, 1, 2).float(),
@@ -202,18 +249,16 @@ def train_net(net,
                 # grad_scaler.step(optimizer)
                 # grad_scaler.update()
                 optimizer.zero_grad()
-                loss_train.backward()
+                train_loss_batch.backward()
                 optimizer.step()
 
                 pbar.update(images.shape[0])
                 global_step += 1
-                epoch_loss += loss_train.item()
-                experiment.log({
-                    'train loss': loss_train.item(),
-                    'step': global_step,
-                    'epoch': epoch
-                })
-                pbar.set_postfix(**{'loss (batch)': loss_train.item()})
+                # epoch_loss += loss_train.item()
+                train_loss_collector = np.append(
+                    train_loss_collector, train_loss_batch.cpu().detach().numpy())
+
+                pbar.set_postfix(**{'loss (batch)': train_loss_batch.item()})
 
                 # Evaluation round
                 if global_step % (n_train // (10 * batch_size)) == 0:
@@ -225,34 +270,74 @@ def train_net(net,
                         histograms['Gradients/' +
                                    tag] = wandb.Histogram(value.grad.data.cpu())
 
-                    val_score, loss_valid = evaluate(net, val_loader, device)
-                    # scheduler.step(val_score)
-                    
+                    val_score, valid_loss = evaluate(net, val_loader, device)
+                    scheduler.step(val_score)
+
+                    # get best model depends on best_valid_loss
+                    if best_loss > valid_loss:
+                        best_loss = valid_loss
+                        torch.save(net.state_dict(),
+                                   dir_checkpoint.joinpath('checkpoint.pth'))
+                        logging.info(f'Checkpoint saved! \
+                            Best loss updated: {best_loss:,.4f},  Model Saved!')
+
+                    # get mask_pred
                     threshold = 0.5
-                    full_mask_ = torch.softmax(masks_pred, dim=1)[0].float().cpu()
-                    full_mask = full_mask_ > threshold
+                    full_mask_ = torch.softmax(masks_pred, dim=1)[
+                        0].float().cpu()
+                    full_mask = torch.tensor(full_mask_ > 0.5).float()
 
-                    logging.info(f'Val - Dice score: {val_score:.4f}, Loss:{loss_valid:.3f}')
-                    experiment.log({
-                        'learning rate': optimizer.param_groups[0]['lr'],
-                        'validation Dice': val_score,
-                        'validation Loss': loss_valid,
-                        'images': wandb.Image(images[0].cpu()),
-                        'masks': {
-                            'true': wandb.Image(true_masks[0].float().cpu()),
-                            'pred': wandb.Image(full_mask),
-                        },
-                        'step': global_step,
-                        'epoch': epoch,
-                        **histograms
-                    })
+                    logging.info(
+                        f'Val - Dice score: {val_score:.4f}, Loss:{valid_loss:.3f}')
 
-        if save_checkpoint:
-            Path(dir_checkpoint).mkdir(parents=True, exist_ok=True)
-            if (epoch + 1) % args.save_epoch == 0:
-                torch.save(net.state_dict(), str(dir_checkpoint /
-                           'checkpoint_epoch{}.pth'.format(epoch + 1)))
-                logging.info(f'Checkpoint {epoch + 1} saved!')
+            # training log
+            train_loss = np.mean(train_loss_collector)
+
+            experiment.log({
+                'learning rate': optimizer.param_groups[0]['lr'],
+                'train loss':  train_loss,
+                'validation Dice': val_score,
+                'validation Loss': valid_loss,
+                'images': wandb.Image(images[0].cpu()),
+                'masks': {
+                    'true': wandb.Image(true_masks[0].float().cpu()),
+                    # 'pred': wandb.Image(torch.softmax(masks_pred, dim=1)[0].float().cpu()),
+                    'pred': wandb.Image(full_mask),
+                },
+                'step': global_step,
+                'epoch': epoch,
+                **histograms
+            })
+
+            params['train_loss'].extend([train_loss])
+            params['valid_loss'].extend([valid_loss])
+            params['valid_score'].extend([val_score])
+
+        # early stopping
+        trigger_times = early_stop(
+            valid_loss, best_loss, trigger_times, patience)
+        if trigger_times >= patience:
+            print('Early stopping!')
+            save_log()
+            break
+
+        # if save_checkpoint:
+        #     Path(dir_checkpoint).mkdir(parents=True, exist_ok=True)
+        #     if (epoch + 1) % args.save_epoch == 0:
+        #         torch.save(net.state_dict(), str(dir_checkpoint /
+        #                    'checkpoint_epoch{}.pth'.format(epoch + 1)))
+        #         logging.info(f'Checkpoint {epoch + 1} saved!')
+
+        # learning curve
+        if (epoch + 1) % 10 == 0:
+            best_val_loss = min(params['valid_loss'])
+            best_epoch = np.argmin(params['valid_loss'])
+
+            sub = 'min val_loss %.4f at epoch %s' % (best_val_loss, best_epoch)
+            fig = plt_learning_curve(params['train_loss'], params['valid_loss'],
+                                     title='Loss', sub='%s | %s' % (dir_checkpoint, sub))
+            fig.savefig(os.path.join(dir_checkpoint, 'loss.png'))
+            print('dir_checkpoint: ', dir_checkpoint)
 
 
 if __name__ == '__main__':
@@ -287,7 +372,7 @@ if __name__ == '__main__':
                   batch_size=args.batch_size,
                   learning_rate=args.lr,
                   device=device,
-                  input_size=input_size, 
+                  input_size=input_size,
                   output_size=output_size,
                   val_percent=args.val / 100,
                   img_type=args.img_type,
@@ -297,3 +382,6 @@ if __name__ == '__main__':
         torch.save(net.state_dict(), 'INTERRUPTED.pth')
         logging.info('Saved interrupt')
         sys.exit(0)
+
+
+print('Training Ended')
