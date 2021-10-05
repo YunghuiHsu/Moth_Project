@@ -31,24 +31,24 @@ parser = argparse.ArgumentParser(
     description='Train the UNet on images and target masks')
 
 # enviroment
-parser.add_argument('--gpu', dest='gpu', default='0')
+parser.add_argument('--gpu', '-g', dest='gpu', default='0')
 parser.add_argument("--save_epoch", '-save_e', type=int,
                     default=1, help="save checkpoint per epoch")
 
 # data
 parser.add_argument('--XX_DIR', dest='XX_DIR',
-                    default='./data/data_for_Sup_train/imgs/')
+                    default='data/data_for_Sup_train/imgs/')
 parser.add_argument('--YY_DIR', dest='YY_DIR',
-                    default='./data/data_for_Sup_train/masks/')
+                    default='data/data_for_Sup_train/masks/')
 parser.add_argument('--SAVEDIR', dest='SAVEDIR',
                     default='model/Unet_rmbg')  # Unet_rmbg
 
-parser.add_argument('--image_input_size', '-sizein_', dest='size_in',
+parser.add_argument('--image_input_size', '-s_in', dest='size_in',
                     type=str, default='256,256', help='image size input')
-parser.add_argument('--image_output_size', '-size_out', dest='size_out',
+parser.add_argument('--image_output_size', '-s_out', dest='size_out',
                     type=str, default='256,256', help='image size output')
 parser.add_argument('--image-c', dest='im_c', default=3, type=int)
-parser.add_argument('--img_type', '-', dest='img_type',
+parser.add_argument('--img_type', '-t', dest='img_type',
                     metavar='TYPE', type=str, default='.png', help='image type: .png, .jpg ...')
 
 # model
@@ -56,7 +56,7 @@ parser.add_argument('--epochs', '-e', metavar='E',
                     type=int, default=100, help='Number of epochs')
 parser.add_argument('--batch-size', '-b', dest='batch_size',
                     metavar='B', type=int, default=8, help='Batch size')
-parser.add_argument('--learning-rate', '-l', metavar='LR', type=float, default=1e-3,
+parser.add_argument('--learning-rate', '-lr', metavar='LR', type=float, default=1e-6,
                     help='Learning rate', dest='lr')
 parser.add_argument('--load', '-f', type=str,
                     default=False, help='Load model from a .pth file')
@@ -138,7 +138,7 @@ def train_net(net,
         sav = vars(args)
         # sav['test_loss'] = test_loss
         # sav['Dice loss'] = mIoU
-        sav['validation Dice'] = val_score
+        sav['validation Dice'] = val_score.numpy().cpu()
         sav['dir_checkpoint'] = dir_checkpoint
         sav['best_val_loss'] = best_val_loss
         sav['best_epoch'] = best_epoch
@@ -152,7 +152,7 @@ def train_net(net,
         else:
             dnew.to_csv(summary_save, index=False)
 
-        print(summary_save)
+        print(f'\n{summary_save} saved!')
 
     # Prepare dataset, Split into train / validation partitions
     img_paths = list(dir_img.glob('*' + img_type))
@@ -166,7 +166,7 @@ def train_net(net,
     train_set = MothDataset(
         X_train, y_train, input_size=input_size, output_size=output_size, img_aug=True)
     val_set = MothDataset(X_valid, y_valid, input_size=input_size,
-                          output_size=output_size, img_aug=False)
+                          output_size=output_size, img_aug=True)
 
     n_val = len(val_set)
     n_train = len(train_set)
@@ -199,9 +199,9 @@ def train_net(net,
     # 4. Set up the optimizer, the loss, the learning rate scheduler and the loss scaling for AMP
     # optimizer = optim.RMSprop(net.parameters(), lr=learning_rate, weight_decay=1e-8, momentum=0.9)
     optimizer = optim.Adam(
-        net.parameters(), lr=learning_rate, weight_decay=1e-8)
+        net.parameters(), lr=learning_rate, weight_decay=1e-15)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, 'max', patience=30)  # goal: maximize Dice score
+        optimizer, 'min', patience=30)  # goal: maximize Dice score > 'max' / minimize Valid Loss > 'min'
     # grad_scaler = torch.cuda.amp.GradScaler(enabled=amp)
     criterion = nn.CrossEntropyLoss()
     global_step = 0
@@ -271,7 +271,7 @@ def train_net(net,
                                    tag] = wandb.Histogram(value.grad.data.cpu())
 
                     val_score, valid_loss = evaluate(net, val_loader, device)
-                    scheduler.step(val_score)
+                    scheduler.step(valid_loss)
 
                     # get best model depends on best_valid_loss
                     if best_loss > valid_loss:
@@ -317,27 +317,22 @@ def train_net(net,
         trigger_times = early_stop(
             valid_loss, best_loss, trigger_times, patience)
         if trigger_times >= patience:
-            print('Early stopping!')
-            save_log()
-            break
+            print('\nTrigger Early stopping!')
+            
 
-        # if save_checkpoint:
-        #     Path(dir_checkpoint).mkdir(parents=True, exist_ok=True)
-        #     if (epoch + 1) % args.save_epoch == 0:
-        #         torch.save(net.state_dict(), str(dir_checkpoint /
-        #                    'checkpoint_epoch{}.pth'.format(epoch + 1)))
-        #         logging.info(f'Checkpoint {epoch + 1} saved!')
-
-        # learning curve
-        if (epoch + 1) % 10 == 0:
+            # learning curve
             best_val_loss = min(params['valid_loss'])
             best_epoch = np.argmin(params['valid_loss'])
 
-            sub = 'min val_loss %.4f at epoch %s' % (best_val_loss, best_epoch)
+            sub = f'min val_loss {best_val_loss:.4f}, at epoch {best_epoch:s}'
             fig = plt_learning_curve(params['train_loss'], params['valid_loss'],
-                                     title='Loss', sub='%s | %s' % (dir_checkpoint, sub))
+                                     title='Loss', sub=f'{dir_checkpoint:s} | {sub:s}')
             fig.savefig(os.path.join(dir_checkpoint, 'loss.png'))
-            print('dir_checkpoint: ', dir_checkpoint)
+            print(f'\nLoss fig saved : {dir_checkpoint}')
+
+            save_log()
+            
+            break
 
 
 if __name__ == '__main__':
@@ -379,7 +374,7 @@ if __name__ == '__main__':
                   amp=args.amp
                   )
     except KeyboardInterrupt:
-        torch.save(net.state_dict(), 'INTERRUPTED.pth')
+        torch.save(net.state_dict(), dir_checkpoint.joinpath('INTERRUPTED.pth'))
         logging.info('Saved interrupt')
         sys.exit(0)
 

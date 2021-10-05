@@ -1,6 +1,8 @@
+from logging import exception
 import os
 import sys
 import glob
+import re
 from pathlib import Path
 from typing import Counter
 import numpy as np
@@ -11,117 +13,145 @@ from PIL import Image
 # -------------------------------------------------------------------------------------------------
 # find out segmentation for rgb failured
 
-file = 'bk_clear'  # 'bk_clear'、'bk_mix'、'bk_lowcontrast'
+# file = 'bk_lowcontrast'  # 'bk_clear'、'bk_mix'、'bk_lowcontrast'
 
-# data_for_Unsup_rmbg
-root_dir = 'data/data_for_Unsup_rmbg'
-dir_for_Unsup = Path(f'{root_dir}/{file}')
-imgs_for_Unsup_name = {path.stem for path in dir_for_Unsup.glob('*.png')}
-print(len(imgs_for_Unsup_name))
+# # data_for_Unsup_rmbg
+# root_dir = 'data/data_for_Unsup_rmbg'
+# dir_for_Unsup = Path(f'{root_dir}/{file}')
+# imgs_for_Unsup_name = {path.stem for path in dir_for_Unsup.glob('*.png')}
+# print(len(imgs_for_Unsup_name))
 
-# label_waiting_postprocess
-root_dir_rgb = 'data/label_waiting_postprocess/mask_waitinting_for_posrprocess/rgb_background_for_fill'
-dir_rgb = Path(f'{root_dir_rgb}/{file}')
-print(len(imgs_rgb))
-imgs_rgb_name = {path.stem.split('。')[0].split('-')[0]
-                 for path in dir_rgb.glob('*.png')}
-print(len(imgs_rgb_name))
+# # label_waiting_postprocess
+# root_dir_rgb = 'data/label_waiting_postprocess/mask_waitinting_for_posrprocess/rgb_background_for_fill'
+# dir_rgb = Path(f'{root_dir_rgb}/{file}')
+# print(len(imgs_rgb))
+# imgs_rgb_name = {path.stem.split('。')[0].split('-')[0]
+#                  for path in dir_rgb.glob('*.png')}
+# print(len(imgs_rgb_name))
 
-# mask_picked
-dir_masks_picked = Path('data/data_for_Sup_train/masks')
-imgs_masks_names = {path.stem for path in dir_masks_picked.glob('*.png')}
-print(len(imgs_masks_names))
+# # mask_picked
+# dir_masks_picked = Path('data/data_for_Sup_train/masks')
+# imgs_masks_names = {path.stem for path in dir_masks_picked.glob('*.png')}
+# print(len(imgs_masks_names))
 
-save_dir = Path(f'./data/tmp/{file}_failure')
-if not save_dir.exists():
-    save_dir.mkdir()
-    print(save_dir, 'created')
+# save_dir = Path(f'./data/tmp/{file}_failure')
+# if not save_dir.exists():
+#     save_dir.mkdir()
+#     print(save_dir, 'created')
 
-imgs_failure_name = imgs_for_Unsup_name - imgs_rgb_name - imgs_masks_names
-print(len(imgs_failure_name))
-assert len(imgs_for_Unsup_name) - len(imgs_rgb_name) == len(imgs_failure_name)
+# imgs_failure_name = imgs_for_Unsup_name - imgs_rgb_name - imgs_masks_names
+# print(len(imgs_failure_name))
+# assert len(imgs_for_Unsup_name) - len(imgs_rgb_name) == len(imgs_failure_name)
 
-for i, img_name in enumerate(imgs_for_Unsup_name):
-    if img_name not in imgs_failure_name:
-        continue
-    path = dir_for_Unsup.joinpath(img_name + '.png')
-    img = io.imread(path)
-    Image.fromarray(img).save(save_dir.joinpath(img_name + '.png'))
-    print(i, img_name)
+# for i, img_name in enumerate(imgs_for_Unsup_name):
+#     if img_name not in imgs_failure_name:
+#         continue
+#     path = dir_for_Unsup.joinpath(img_name + '.png')
+#     img = io.imread(path)
+#     Image.fromarray(img).save(save_dir.joinpath(img_name + '.png'))
+#     print(i, img_name)
 
 # =================================================================================================================
 
 # ------------------------------------------------------------------------------------------------
 # exclude mask picked
 
+
+# imgs need for checked
 # file = 'bk_mix'  # 'bk_clear'、'bk_mix'、'bk_lowcontrast'
 # dir_rgb = Path(
 #     f'data/label_waiting_postprocess/mask_waitinting_for_posrprocess/rgb_background_for_fill/{file}')
-# imgs_rgb = list(dir_rgb.glob('*.png'))
-# print(len(imgs_rgb))
-# imgs_rgb_name =  {path.stem.split('。')[0].split('-')[0] for path in imgs_rgb}
-# print(len(imgs_rgb_name))
 
+# dir_target = Path('../crop/origin')
+# imgs_target = list(dir_target.glob('*.png'))
+# print('imgs_target : ', len(imgs_target))
+# imgs_target_name = {path.stem for path in imgs_target}
+# print('imgs_target_name : ',len(imgs_target_name))
+
+# # mask_picked
 # dir_masks_picked = Path('data/data_for_Sup_train/masks')
 # imgs_masks_names = {path.stem for path in dir_masks_picked.glob('*.png')}
-# print(len(imgs_masks_names))
+# print('imgs_masks : ', len(imgs_masks_names))
 
-# inter = set(imgs_rgb_name) & set(imgs_masks_names)
-# print(len(inter), ':', inter)
+# inter = set(imgs_target_name) & set(imgs_masks_names)
+# except_ = set(imgs_target_name) - set(imgs_masks_names)
+# # print(len(inter), ':', inter)
+# print('imgs_target - imgs_masks :', len(except_))
 
-# save_dir = Path(f'./data/tmp/{file}_tmp')
-# if not save_dir.exists():
-#     save_dir.mkdir()
-#     print(save_dir, 'created')
+# # save_dir = Path(f'data/tmp/target_tmp')
+# save_dir = Path(f'data/data_for_Sup_predict')
+# save_dir.mkdir(parents=True, exist_ok=True)
 
-# c=1
-# for i, path in enumerate(imgs_rgb):
+
+# c = 1
+# for idx, path in enumerate(imgs_target):
 #     img_name = path.name.split('。')[0].split('-')[0].split('.')[0]
 #     if img_name in imgs_masks_names:
-#         print(f'\t{i:3d}, {img_name} will not save')
+#         # print(f'\t{i:3d}, {img_name} will not save')
 #         continue
 #     img = io.imread(path)
 #     Image.fromarray(img).save(save_dir.joinpath(path.name))
-#     print(f'{i:3d}, {c}, {img_name} saved')
-#     c+=1
-
-# ------------------------------------------------------------------------------------------------
-
-# data_for_Unsup_rmbg
-# dir_for_Unsup = Path('data/data_for_Unsup_rmbg')
-# file_for_Unsup = set(dir_for_Unsup.rglob('*.png'))
-# print(len(file_for_Unsup))
-# imgs_for_Unsup_name = {path.stem for path in dir_for_Unsup.glob('*.png')}
-# print(len(imgs_for_Unsup_name))
-
-
-# dir_mask_picked = Path('data/data_for_Sup_train/masks')
-# file_mask_picked = {path.stem for path in dir_mask_picked.glob('*.png')}
-# print(len(file_mask_picked))
-# dir_mask_postprocess = Path('data/processed/finalstep/mask_unsup2sup_crf_cntr')
-# file_mask_postprocess = {path.stem.split('。')[0].split('-')[0] for path in dir_mask_postprocess.glob('*.png')}
-# print(len(file_mask_picked))
-
-# mask_unpicked = file_mask_postprocess - file_mask_picked
-# print(len(mask_unpicked))
-
-# save_dir = Path(f'./data/tmp/mask_unpicked_tmp')
-# if not save_dir.exists():
-#     save_dir.mkdir()
-#     print(save_dir, 'created')
-
-# c = 0
-# for i, path in enumerate(file_for_Unsup):
-
-#     if path.stem not in mask_unpicked:
-#         continue
-
-#     img_origin = io.imread(path)
-#     Image.fromarray(img_origin).save(save_dir.joinpath(path.stem + '_origin' + '.jpg'))
-
-#     img_mask = io.imread(dir_mask_postprocess.joinpath(path.name))
-#     Image.fromarray(img_mask).save(save_dir.joinpath(path.name))
-
-#     print(i, c, path.name)
+#     print(f'{idx:3d}, {c}, {img_name} saved')
 #     c += 1
+
+# =================================================================================================
+# Transform img_rmbg from mask
+# -------------------------------------------------------------------------------------------------
+
+# load masks
+dir_target = Path('data\data_for_Sup_predict')
+masks = list(dir_target.glob('*Mask.png'))
+masks_name = [path.stem.split('_UnetMask')[0] for path in masks]
+print(f'masks : {len(masks)}')
+print(f'masks_name : {len(masks_name)}')
+
+# ---------------------------------------------------------------------------------------
+## 確認是否有亂碼
+# ^: not
+# 標點符號 (Punctuation & Symbols):   \u0021-\u002F\u003A-\u0040\u005B-\u0060\u007B-\u007E
+# \w: any word character
+regex = re.compile(r'[^\w\u0021-\u002F\u003A-\u0040\u005B-\u0060\u007B-\u007E\s]')
+check_error_character = [n for n in masks_name  if regex.findall(n)!=[]]
+print(len(check_error_character))
+assert check_error_character ==[], f'wrong character : {check_error_character}'
+# ---------------------------------------------------------------------------------------
+
+
+# load raw imgs
+dir_origin = Path('../crop/origin')  
+
+
+# get img with background removed 
+name_error = []
+for idx, name in enumerate(masks_name):
+    
+    try:
+        img_ = io.imread(dir_origin.joinpath(name + '.png'))            # (h,w,c), [0, 255], uint8
+    except Exception as e:
+        print(e)
+        name_error.append(name)
+    
+    # load mask and transform
+    mask_ = io.imread(dir_target.joinpath(name + '_UnetMask.png'))  # (h,w), [0|255], uint8
+    mask_3 = np.stack([mask_,mask_,mask_], axis=2)/255              # (h,w,3). [0|255], uint8 >　[0.0|1.0], float64
+    white_mask = 1-mask_3
+    blue_mask = np.zeros_like(mask_3)
+    blue_mask[...,2] = white_mask[...,2]  # assign channel 3 depends on binary mask(0,1) (0,0,0) > (0,0,1)      
+    
+    # get img with background removed
+    img_rmgb = (img_ * mask_3 + blue_mask*255).astype('uint8')
+
+    # save img
+    io.imsave(dir_target.joinpath(name + '.png'), img_)
+    io.imsave(dir_target.joinpath(name + '_UnetRmbg.png'), img_rmgb)
+    print(f'{idx:4d}, {name} saved')
+
+name_error
+
+import re
+
+test = name_error[0]
+
+
+
 
