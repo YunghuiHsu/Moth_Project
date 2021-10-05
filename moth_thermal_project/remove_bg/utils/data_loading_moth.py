@@ -51,7 +51,7 @@ def img_aug_color_noise(img):
     '''
     # add coarse(rectangle shape) noise
     # size_percent : drop them on an image with min - max% percent of the original size
-    aug_noise = iaa.CoarseDropout(p=(0.005, 0.05), size_percent=(.01, .5), per_channel=0.5)
+    aug_noise = iaa.CoarseDropout(p=(0.01, 0.05), size_percent=(.01, .5), per_channel=0.5)
 
     aug_color = iaa.Sequential([
         iaa.Multiply((0.9, 1.1), per_channel=0.05),

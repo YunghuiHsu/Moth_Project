@@ -65,7 +65,7 @@ def plt_learning_curve(train_loss_noted, valid_loss_noted, title='', sub='', st=
         plt.plot(np.arange(len(valid_loss_noted)),
                  valid_loss_noted, 'r', label='valid')
     plt.title(title)
-    plt.suptitle(sub, fontsize=8, color='gray')
+    plt.suptitle(sub, fontsize=10, color='gray')
     plt.xlabel('epoch', fontsize=10)
     plt.ylabel('loss', fontsize=10)
     plt.legend(loc='best')
@@ -86,10 +86,11 @@ def early_stop(valid_loss, best_loss,  trigger_times, patience):
     '''
     if valid_loss > best_loss:
         trigger_times += 1
-        print('\tEarly stopping trigger times:', trigger_times)
+        print('\nEarly stopping trigger times:', trigger_times)
     else:
         trigger_times = 0
+        print('\ntrigger times reset:', trigger_times)
 
     if trigger_times >= patience:
-        print('\tEarly stop!')
+        print('\nEarly stop!')
     return trigger_times
