@@ -3,6 +3,7 @@ import logging
 import pathlib
 import sys
 import os
+import time
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -56,7 +57,7 @@ parser.add_argument('--epochs', '-e', metavar='E',
                     type=int, default=100, help='Number of epochs')
 parser.add_argument('--batch-size', '-b', dest='batch_size',
                     metavar='B', type=int, default=8, help='Batch size')
-parser.add_argument('--learning-rate', '-lr', metavar='LR', type=float, default=1e-6,
+parser.add_argument('--learning-rate', '-lr', metavar='LR', type=float, default=1e-3,
                     help='Learning rate', dest='lr')
 parser.add_argument('--load', '-f', type=str,
                     default=False, help='Load model from a .pth file')
@@ -88,6 +89,7 @@ dir_checkpoint = Path(f'{args.SAVEDIR}/{time_}')
 # dir_checkpoint = Path(f'./checkpoints/{time_}')
 dir_checkpoint.mkdir(parents=True, exist_ok=True)
 
+
 dir_benchmarks = Path('./data/data_for_Sup_train/benchmarks/')
 
 # ----------------------------------------------------------------------------
@@ -95,15 +97,16 @@ dir_benchmarks = Path('./data/data_for_Sup_train/benchmarks/')
 # dir_mask_tmp = Path('./data/data_for_Sup_train/masks_tmp')
 # dir_mask_tmp.mkdir(parents=True, exist_ok=True)
 # for i, path in enumerate(dir_mask.glob('*.png')):
-#     img_name = path.name.split('.')[0]
-#     img = io.imread(path, as_gray=True)
-#     img_ = (img*255).astype(np.uint8)
-#     img_ = np.where(img_ == 0, 0, 255).astype('uint8')
-#     save_path = dir_mask_tmp.joinpath(img_name + '.png')
-#     Image.fromarray(img_).save(save_path)
-#     print(i, img_file, 'saved' )
+#     mask_name = path.stem
+#     mask_ = io.imread(path, as_gray=True)  # (h,w) uint8
+#     mask_int8 = (mask_*255).astype(np.uint8)
+#     mask_bi = np.where(mask_int8 == 0, 0, 255).astype('uint8')
+#     save_path = dir_mask_tmp.joinpath(mask_name + '.png')
+#     io.imsave(save_path, mask_bi)
+#     print(i, mask_name, 'saved' )
 
-# prepare dir_img by  dir_mask
+
+# ## prepare dir_img by  dir_mask
 # dir_ori = Path('../crop/origin/')
 # for i, path in enumerate(dir_mask.iterdir()):
 #     if not path.name.endswith('.png'):
@@ -112,11 +115,12 @@ dir_benchmarks = Path('./data/data_for_Sup_train/benchmarks/')
 #     origin_file = dir_ori.joinpath(img_name + '.png')
 #     img = io.imread(origin_file)
 #     save_path = dir_img.joinpath(img_name  + '.png')
-#     Image.fromarray(img).save(save_path)
-#     print(i, img_file, 'saved' )
+#     io.imsave(save_path, img)
+#     print(i, img_name, 'saved' )
 
 
 # # ----------------------------------------------------------------------------
+
 def train_net(net,
               device,
               epochs: int = 5,
@@ -130,30 +134,6 @@ def train_net(net,
               amp: bool = False
               ):
 
-    # Save log
-    def save_log():
-        summary_save = f'{args.SAVEDIR}/training_summary_pytorch.csv'
-
-        # save into dictionary
-        sav = vars(args)
-        # sav['test_loss'] = test_loss
-        # sav['Dice loss'] = mIoU
-        sav['validation Dice'] = val_score.numpy().cpu()
-        sav['dir_checkpoint'] = dir_checkpoint
-        sav['best_val_loss'] = best_val_loss
-        sav['best_epoch'] = best_epoch
-
-        # Append into summary files
-        dnew = pd.DataFrame(sav, index=[0])
-        if os.path.exists(summary_save):
-            dori = pd.read_csv(summary_save)
-            dori = pd.concat([dori, dnew])
-            dori.to_csv(summary_save, index=False)
-        else:
-            dnew.to_csv(summary_save, index=False)
-
-        print(f'\n{summary_save} saved!')
-
     # Prepare dataset, Split into train / validation partitions
     img_paths = list(dir_img.glob('*' + img_type))
     mask_paths = list(dir_mask.glob('*' + img_type))
@@ -165,8 +145,8 @@ def train_net(net,
         img_paths, mask_paths, test_size=val_percent, random_state=1)
     train_set = MothDataset(
         X_train, y_train, input_size=input_size, output_size=output_size, img_aug=True)
-    val_set = MothDataset(X_valid, y_valid, input_size=input_size,
-                          output_size=output_size, img_aug=True)
+    val_set = MothDataset(
+        X_valid, y_valid, input_size=input_size, output_size=output_size, img_aug=True)
 
     n_val = len(val_set)
     n_train = len(train_set)
@@ -201,26 +181,37 @@ def train_net(net,
     optimizer = optim.Adam(
         net.parameters(), lr=learning_rate, weight_decay=1e-15)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, 'min', patience=30)  # goal: maximize Dice score > 'max' / minimize Valid Loss > 'min'
+        optimizer, 'max', patience=20)  # goal: maximize Dice score > 'max' / minimize Valid Loss > 'min'
     # grad_scaler = torch.cuda.amp.GradScaler(enabled=amp)
     criterion = nn.CrossEntropyLoss()
     global_step = 0
 
     # Parameters that should be stored.
+    global params
     params = {}
+    params['epoch'] = []
+    params['step'] = []
+    # params['time(h)'] =[]
+    params['time(m)'] = []
+    params['learning_rate'] = []
     params['train_loss'] = []
     params['valid_loss'] = []
-    # params['train_score']=[]
-    params['valid_score'] = []
+    params['valid_dice'] = []
 
     # 5. Begin training
-    best_loss = 1e10
-    patience = 100
+    # best_loss = 1e3
+    # best_dice = 0
+    patience = 30
     trigger_times = 0
+    metric = 'max'
+    start_time = time.time()
     for epoch in range(epochs):
         net.train()
         epoch_loss = 0
         with tqdm(total=n_train, desc=f'Epoch {epoch + 1}/{epochs}', unit='img') as pbar:
+            # ------------------------------------------------------------------------------------------
+            # Train round
+            # ------------------------------------------------------------------------------------------
             train_loss_collector = []
             for batch in train_loader:
                 images = batch['image']
@@ -260,41 +251,66 @@ def train_net(net,
 
                 pbar.set_postfix(**{'loss (batch)': train_loss_batch.item()})
 
-                # Evaluation round
-                if global_step % (n_train // (10 * batch_size)) == 0:
-                    histograms = {}
-                    for tag, value in net.named_parameters():
-                        tag = tag.replace('/', '.')
-                        histograms['Weights/' +
-                                   tag] = wandb.Histogram(value.data.cpu())
-                        histograms['Gradients/' +
-                                   tag] = wandb.Histogram(value.grad.data.cpu())
+            # ------------------------------------------------------------------------------------------
+            # Evaluation round
+            # ------------------------------------------------------------------------------------------
+            # if global_step % (n_train // (10 * batch_size)) == 0:
+            histograms = {}
+            for tag, value in net.named_parameters():
+                tag = tag.replace('/', '.')
+                histograms['Weights/' +
+                           tag] = wandb.Histogram(value.data.cpu())
+                histograms['Gradients/' +
+                           tag] = wandb.Histogram(value.grad.data.cpu())
 
-                    val_score, valid_loss = evaluate(net, val_loader, device)
-                    scheduler.step(valid_loss)
+            net.eval()
+            val_score, valid_loss = evaluate(net, val_loader, device)
+            scheduler.step(val_score.cpu().numpy())
 
-                    # get best model depends on best_valid_loss
-                    if best_loss > valid_loss:
-                        best_loss = valid_loss
-                        torch.save(net.state_dict(),
-                                   dir_checkpoint.joinpath('checkpoint.pth'))
-                        logging.info(f'Checkpoint saved! \
-                            Best loss updated: {best_loss:,.4f},  Model Saved!')
-
-                    # get mask_pred
-                    threshold = 0.5
-                    full_mask_ = torch.softmax(masks_pred, dim=1)[
-                        0].float().cpu()
-                    full_mask = torch.tensor(full_mask_ > 0.5).float()
-
-                    logging.info(
-                        f'Val - Dice score: {val_score:.4f}, Loss:{valid_loss:.3f}')
-
+            # ---------------------------------------------------------------------------------------------------------------------------
+            # Update and log parameters
+            # ---------------------------------------------------------------------------------------------------------------------------
             # training log
+            time_cost = time.time()-start_time
             train_loss = np.mean(train_loss_collector)
+            curr_lr = optimizer.param_groups[0]['lr']
+            params['epoch'] += [epoch]
+            params['step'] += [global_step]
+            # params['time(h)'] += [int(time_cost//(60*60))]
+            params['time(m)'] += [time_cost/60]
+            params['learning_rate'] += [curr_lr]
+            params['train_loss'] += [train_loss]
+            params['valid_loss'] += [valid_loss]
+            params['valid_dice'] += [val_score.cpu().numpy()]
+            pd.DataFrame.from_dict(params).to_csv(
+                dir_checkpoint.joinpath('losses.csv'))
+
+            global best_dice_score
+            best_dice_score = max(params['valid_dice'])
+            global best_val_loss
+            best_val_loss = min(params['valid_loss'])
+            global best_epoch
+            best_epoch = np.argmin(params['valid_loss'])
+
+            # learning curve
+            if (epoch+1) % 5 == 0:
+                sub = f'min val_loss {best_val_loss:.4f}, at epoch {best_epoch:2d}'
+                fig = plt_learning_curve(
+                    params['train_loss'], params['valid_loss'], title='Loss', sub=f'{dir_checkpoint} | {sub:s}')
+                fig.savefig(dir_checkpoint.joinpath('loss.jpg'))
+                print(f'\nLoss fig saved : {dir_checkpoint}')
+
+            # get mask_pred
+            threshold = 0.5
+            full_mask_ = torch.softmax(masks_pred, dim=1)[
+                0].float().clone().detach().cpu()
+            full_mask = torch.tensor(full_mask_ > 0.5).float()
+
+            logging.info(
+                f'Valid - Dice_score: {val_score:.4f}, Loss:{valid_loss:.4f}')
 
             experiment.log({
-                'learning rate': optimizer.param_groups[0]['lr'],
+                'learning rate': curr_lr,
                 'train loss':  train_loss,
                 'validation Dice': val_score,
                 'validation Loss': valid_loss,
@@ -309,30 +325,61 @@ def train_net(net,
                 **histograms
             })
 
-            params['train_loss'].extend([train_loss])
-            params['valid_loss'].extend([valid_loss])
-            params['valid_score'].extend([val_score])
+            # ---------------------------------------------------------------------------------------------------------------------------
+            # get best model depends on valid_loss or val_score
+            if metric == 'max':
+                best_value = best_dice_score           # numpy
+                valid_value = val_score.cpu().numpy()
+                cond = best_value < valid_value  # '<' for maximize accuracy or val_score
+            elif metric == 'min':
+                best_value = best_val_loss
+                valid_value = valid_loss
+                cond = best_value > valid_value  # '>' for minimize loss
+            if cond:
+                best_value = valid_value
+                torch.save(net.state_dict(),
+                           dir_checkpoint.joinpath('checkpoint.pth'))
+                logging.info(f'Checkpoint saved! \
+                    Best value updated: {best_value:,.4f},  Model Saved!')
 
-        # early stopping
+            # ---------------------------------------------------------------------------------------------------------------------------
+
+        # ---------------------------------------------------------------------------------------------------------------------------
+        # Early stopping
+        # ---------------------------------------------------------------------------------------------------------------------------
         trigger_times = early_stop(
-            valid_loss, best_loss, trigger_times, patience)
+            val_score.cpu().numpy(), best_dice_score, trigger_times, patience, metric=metric)
         if trigger_times >= patience:
             print('\nTrigger Early stopping!')
-            
-
-            # learning curve
-            best_val_loss = min(params['valid_loss'])
-            best_epoch = np.argmin(params['valid_loss'])
-
-            sub = f'min val_loss {best_val_loss:.4f}, at epoch {best_epoch:s}'
-            fig = plt_learning_curve(params['train_loss'], params['valid_loss'],
-                                     title='Loss', sub=f'{dir_checkpoint:s} | {sub:s}')
-            fig.savefig(os.path.join(dir_checkpoint, 'loss.png'))
-            print(f'\nLoss fig saved : {dir_checkpoint}')
-
-            save_log()
-            
             break
+
+# Save log
+
+
+def save_log():
+    summary_save = f'{args.SAVEDIR}/training_summary_pytorch.csv'
+
+    # save into dictionary
+    sav = vars(args)
+    # sav['test_loss'] = test_loss
+    # sav['Dice loss'] = mIoU
+    sav['dir_checkpoint'] = dir_checkpoint
+    sav['validation Dice'] = best_dice_score
+    sav['best_val_loss'] = best_val_loss
+    sav['best_epoch'] = best_epoch
+
+    # Append into summary files
+    dnew = pd.DataFrame(sav, index=[0])
+    if os.path.exists(summary_save):
+        dori = pd.read_csv(summary_save)
+        dori = pd.concat([dori, dnew])
+        dori.to_csv(summary_save, index=False)
+    else:
+        dnew.to_csv(summary_save, index=False)
+
+    print(f'\n{summary_save} saved!')
+
+# ============================================================================================================================
 
 
 if __name__ == '__main__':
@@ -373,9 +420,12 @@ if __name__ == '__main__':
                   img_type=args.img_type,
                   amp=args.amp
                   )
+        save_log()
     except KeyboardInterrupt:
-        torch.save(net.state_dict(), dir_checkpoint.joinpath('INTERRUPTED.pth'))
+        torch.save(net.state_dict(),
+                   dir_checkpoint.joinpath('INTERRUPTED.pth'))
         logging.info('Saved interrupt')
+        save_log()
         sys.exit(0)
 
 
