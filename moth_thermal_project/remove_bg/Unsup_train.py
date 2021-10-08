@@ -1,11 +1,6 @@
-
 # coding: utf-8
 
-# # Package
-
-# In[1]:
-
-
+# Package
 from func.tool import get_fname
 from torch.autograd import Variable
 from torchvision import datasets, transforms
@@ -27,44 +22,38 @@ import sys
 import time
 import argparse
 import os
+from pathlib import Path
 import matplotlib
 matplotlib.use('Agg')
-
-
 # get_ipython().run_line_magic('matplotlib', 'inline')
 
-
+# =====================================================================================================
 # # Parser
-
-# In[2]:
-
-
 parser = argparse.ArgumentParser(
     description='PyTorch Unsupervised Segmentation')
-parser.add_argument('--gpu_id', default=1, type=int)
+parser.add_argument('--gpu_id', '-g', default=0, type=int)
 
 parser.add_argument('--SAVEDIR', default='data/Unsup_rmbg')
-parser.add_argument(
-    '--XX_DIR', default='data/bk_lowcontrast')
+parser.add_argument('--XX_DIR', default='data/data_for_Unsup_rmbg')
 
 parser.add_argument('--nChannel', metavar='N', default=100,
                     type=int, help='number of channels')
-parser.add_argument('--maxIter', metavar='T', default=1000,
+parser.add_argument('--maxIter', '-t', metavar='T', default=1000,
                     type=int, help='number of maximum iterations')
-parser.add_argument('--minLabels', default=3, type=int,
+parser.add_argument('--minLabels', '-la', default=3, type=int,
                     help='minimum number of labels')
-parser.add_argument('--lr', metavar='LR', default=0.1,
+parser.add_argument('--lr', '-lr', metavar='LR', default=0.1,
                     type=float, help='learning rate')
 parser.add_argument('--nConv', metavar='M', default=2,
                     type=int, help='number of convolutional layers')
 
 # segmentation and superpixel algorithm-------------------------------------------------------------------------------------------------------------
-parser.add_argument('--seg', metavar='segmentation', default='SLIC', type=str,
+parser.add_argument('--segmentation', '-seg', metavar='Segmentation', default='SLIC', type=str,
                     help='segmentation and superpixel algorithm : "SLIC", "FEL"(Felzenszwalb) ')
 # 　　parameter for "SLIC"
-parser.add_argument('--c', metavar='Compactness', default=10,
+parser.add_argument('--compactness', '-c',  metavar='Compactness', default=10,
                     type=float, help='compactness of superpixels')
-parser.add_argument('--p', metavar='num_superpixels',
+parser.add_argument('--num_superpixels', '-p', metavar='num_superpixels',
                     default=2000, type=int, help='number of superpixels')
 
 # 　　parameter for "Felzenszwalb"
@@ -79,24 +68,21 @@ args = parser.parse_args()
 os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu_id)
 use_cuda = torch.cuda.is_available()
 
-method_ = (f'{args.seg}_mlabel{args.minLabels}_LR{args.lr}_compact{args.c}_sigma{args.sig}'
-           if args.seg == 'SLIC'
-           else f'{args.seg}_mlabel{args.minLabels}_LR{args.lr}_scale{args.sca}_sigma{args.sig}')
-# In[3]:
+# =====================================================================================================
 
+method_ = (f'{args.segmentation}_mlabel{args.minLabels}_lr{args.lr}_compact{args.compactness}_sigma{args.sig}'
+           if args.segmentation == 'SLIC'
+           else f'{args.segmentation}_mlabel{args.minLabels}_lr{args.lr}_scale{args.sca}_sigma{args.sig}')
 
-imgdir = args.XX_DIR
-moths = os.listdir(imgdir)
-moths_path = [os.path.join(imgdir, i) for i in moths if os.path.splitext(
-    i)[-1].lower() in ['.jpg', '.png', '.jpeg']]
+imgdir = Path(args.XX_DIR)
+
+moths_path = list(imgdir.rglob('*.png'))
+# moths_path = [os.path.join(imgdir, i) for i in moths if os.path.splitext(
+#     i)[-1].lower() in ['.jpg', '.png', '.jpeg']]
 print('Total Number of images : ', len(moths_path))
 
 
 # # Model
-
-# In[4]:
-
-
 # CNN model
 class MyNet(nn.Module):
     def __init__(self, input_dim):
@@ -128,11 +114,7 @@ class MyNet(nn.Module):
         return x
 
 
-# # Train
-
-# In[5]:
-
-
+# Train
 def visul():
     im_target_rgb = np.array([label_colours[c % 100] for c in im_target])
     im_target_rgb = im_target_rgb.reshape(im.shape).astype(np.uint8)
@@ -194,46 +176,42 @@ def visul():
     ax.imshow(inpt*tmp2 + tmp)
 
     # plt.show()
-#
 
     save_to_check = os.path.join(model_dir, 'checking')
     if not os.path.exists(save_to_check):
         os.makedirs(save_to_check)
-    fig.savefig(os.path.join(save_to_check, fname + f'。{method_}。' + '_checking' + '.jpg'),
-                dpi=100, format='png', bbox_inches='tight')
+    fig.savefig(os.path.join(save_to_check, fname + f'_checking_{method_}.jpg'),
+                dpi=100, format='jpg', bbox_inches='tight')
 
     save_to_rmbg = os.path.join(model_dir, 'moth_rmbg')
     if not os.path.exists(save_to_rmbg):
         os.makedirs(save_to_rmbg)
     io.imsave(os.path.join(save_to_rmbg, fname +
-              f'。{method_}。' + '_rmbg' + '.jpg'), inpt*tmp2 + tmp)
+              f'_rmbg_{method_}.jpg'), inpt*tmp2 + tmp)
 
     save_to_mask = os.path.join(model_dir, 'moth_rmbg_mask')
     if not os.path.exists(save_to_mask):
         os.makedirs(save_to_mask)
     io.imsave(os.path.join(save_to_mask, fname +
-              f'。{method_}。' + '_mask' + '.png'), tmp2*255)
+              f'_mask_{method_}.png'), tmp2*255)
 
     save_to_rmbg = os.path.join(model_dir, 'pred')
     if not os.path.exists(save_to_rmbg):
         os.makedirs(save_to_rmbg)
     io.imsave(os.path.join(save_to_rmbg, fname +
-              f'。{method_}。' + '_rgb' + '.png'), rgb)
+              f'_rgb_{method_}.png'), rgb)
 
     plt.close(fig)
 
 
-# In[6]:
-
-
 # Save DIR
-save_dir = f'{args.SAVEDIR}/{args.seg}/'
-if not os.path.exists(save_dir):
-    os.makedirs(save_dir)
+save_dir = Path(args.SAVEDIR).joinpath(args.segmentation)
+save_dir.mkdir(parents=True, exist_ok=True)
+
 # Model naming
 log_time_str = time.strftime("%y%m%d%H%M%S")
-
-model_dir = os.path.join(save_dir, method_, log_time_str)
+model_dir = save_dir.joinpath(method_)
+model_dir.mkdir(parents=True, exist_ok=True)
 
 # init & loss, optimizer setting
 # model = MyNet(3)
@@ -267,7 +245,7 @@ for index, img_path in enumerate(moths_path):
 
     # input: load and process
     print(index, img_path)
-    im = cv2.imread(img_path)
+    im = cv2.imread(str(img_path))
     im = resize(im, (256, 256))
     fname = get_fname(img_path)
     print(index, fname)
@@ -283,10 +261,10 @@ for index, img_path in enumerate(moths_path):
     # The compactness parameter trades off color-similarity and proximity, as in the case of Quickshift,
     # while n_segments chooses the number of centers for kmeans.
 
-    if args.seg == 'SLIC':
+    if args.segmentation == 'SLIC':
         labels = segmentation.slic(
-            im, compactness=args.c, sigma=args.sca, n_segments=args.p)
-    elif args.seg == 'FEL':
+            im, compactness=args.compactness, sigma=args.sca, n_segments=args.num_superpixels)
+    elif args.segmentation == 'FEL':
         labels = segmentation.felzenszwalb(
             im, scale=args.sca, sigma=args.sca, min_size=args.size)
 
@@ -300,7 +278,7 @@ for index, img_path in enumerate(moths_path):
     l_inds = []
     for i in range(len(u_labels)):
         l_inds.append(np.where(labels == u_labels[i])[0])
-    print(f'{args.seg} n_LABELS: ', len(u_labels))
+    print(f'{args.segmentation} n_LABELS: ', len(u_labels))
 
     for batch_idx in range(args.maxIter):
         # forwarding
@@ -339,17 +317,11 @@ for index, img_path in enumerate(moths_path):
         if nLabels <= args.minLabels:
             print("nLabels", nLabels, "reached minLabels",
                   args.minLabels, "\t" * 10)
-            if not os.path.exists(model_dir):
-                os.makedirs(model_dir)
-            torch.save(model.state_dict(), model_dir + '/model.pkl')
-
+            torch.save(model.state_dict(), model_dir.joinpath('model.pkl'))
             break
 
 
 # # SAVE_LOG
-
-# In[7]:
-
 
 # Save log
 summary_save = '%s/training_summary.csv' % (args.SAVEDIR)
