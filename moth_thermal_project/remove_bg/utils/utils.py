@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 
 
 def plot_img_and_mask(img, mask):
@@ -80,17 +81,50 @@ def plt_learning_curve(train_loss_noted, valid_loss_noted, title='', sub='', st=
     return fig
 
 
-def early_stop(valid_loss, best_loss,  trigger_times, patience):
-    '''早停機制
-    patience:　啟動後。等待幾回合
+def early_stop(valid: float, best_value: float,  trigger_times: int = 0, patience: int = 10, metric: str = 'min') -> int:
     '''
-    if valid_loss > best_loss:
+    valid:: validation value for loss or accuracy or dice score.
+    best_value:: best value of validation value.
+    metric:: 'min' or 'max'  for minimize(loss), else maxmize(accuracy ,dice score).
+    patience::　if trigger, number of waiting depends on patience.
+    '''
+
+    if metric == 'min':
+        cond = valid > best_value  # minimize(loss)
+    elif metric == 'max':
+        cond = valid < best_value  # maxmize(accuracy ,dice score)
+
+    if cond:
         trigger_times += 1
         print('\nEarly stopping trigger times:', trigger_times)
     else:
         trigger_times = 0
         print('\ntrigger times reset:', trigger_times)
 
-    if trigger_times >= patience:
-        print('\nEarly stop!')
+    # if trigger_times >= patience:
+    #     print('\nTriger Early Stop!')
     return trigger_times
+
+def get_data_attribute(img_paths: list) -> pd.DataFrame:
+    names_imgs = [path.stem.split('_cropped')[0] for path in img_paths]
+
+    df = pd.DataFrame(names_imgs, columns=['Name'])
+    cond1 = df.Name.str.contains('CARS')
+    cond2 = df.Name.str.contains('SJTT')
+    index_CARS = df[cond1].index.values
+    index_SJTT = df[cond2].index.values
+    df['Source'] = np.nan
+    df.iloc[index_CARS, 1] = 'CARS'
+    df.iloc[index_SJTT, 1] = 'SJTT'
+
+    presufix = (df.Name.str.split('CARS' , expand=True).loc[:,0]
+                .str.split('SJTT',expand=True).loc[:,0]
+            .str.rstrip('_')
+            .str.replace('\d',''))
+    df['Family'] = presufix
+    index_none = df[df.Family == ''].index.values
+    df.Family[index_none] = 'None'
+    df['Source_Family'] = df.Family + '_' + df.Source
+    df.to_csv('data_attribute.csv', index=False)
+
+    return df
