@@ -24,7 +24,7 @@ from utils.data_loading_moth import MothDataset
 from utils.dice_score import dice_loss
 from evaluate import evaluate
 from unet import UNet
-from utils.utils import early_stop, plt_learning_curve
+from utils.utils import early_stop, plt_learning_curve, get_data_attribute
 
 # =======================================================================================================
 # def get_args():
@@ -89,7 +89,6 @@ dir_checkpoint = Path(f'{args.SAVEDIR}/{time_}')
 # dir_checkpoint = Path(f'./checkpoints/{time_}')
 dir_checkpoint.mkdir(parents=True, exist_ok=True)
 
-
 dir_benchmarks = Path('./data/data_for_Sup_train/benchmarks/')
 
 # ----------------------------------------------------------------------------
@@ -118,7 +117,6 @@ dir_benchmarks = Path('./data/data_for_Sup_train/benchmarks/')
 #     io.imsave(save_path, img)
 #     print(i, img_name, 'saved' )
 
-
 # # ----------------------------------------------------------------------------
 
 def train_net(net,
@@ -141,8 +139,11 @@ def train_net(net,
     assert len(img_paths) == len(
         mask_paths), f'number imgs: {len(img_paths)} and masks: {len(mask_paths)} need equal '
 
+    df = get_data_attribute(img_paths)
+    assert len(df.Source_Family) == len(img_paths) , f'number of imgs: {len(img_paths)} and data_attribute.csv: {len(df.Source_Family)} need equal '
+
     X_train, X_valid, y_train, y_valid = train_test_split(
-        img_paths, mask_paths, test_size=val_percent, random_state=1)
+        img_paths, mask_paths, test_size=val_percent, random_state=1, stratify=df.Source_Family)
     train_set = MothDataset(
         X_train, y_train, input_size=input_size, output_size=output_size, img_aug=True)
     val_set = MothDataset(
@@ -179,7 +180,7 @@ def train_net(net,
     # 4. Set up the optimizer, the loss, the learning rate scheduler and the loss scaling for AMP
     # optimizer = optim.RMSprop(net.parameters(), lr=learning_rate, weight_decay=1e-8, momentum=0.9)
     optimizer = optim.Adam(
-        net.parameters(), lr=learning_rate, weight_decay=1e-15)
+        net.parameters(), lr=learning_rate)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, 'max', patience=20)  # goal: maximize Dice score > 'max' / minimize Valid Loss > 'min'
     # grad_scaler = torch.cuda.amp.GradScaler(enabled=amp)
@@ -199,9 +200,9 @@ def train_net(net,
     params['valid_dice'] = []
 
     # 5. Begin training
-    # best_loss = 1e3
-    # best_dice = 0
-    patience = 30
+    best_loss_init = 1e3
+    best_dice_init = 0
+    patience = 50
     trigger_times = 0
     metric = 'max'
     start_time = time.time()
@@ -265,7 +266,7 @@ def train_net(net,
 
             net.eval()
             val_score, valid_loss = evaluate(net, val_loader, device)
-            scheduler.step(val_score.cpu().numpy())
+#             scheduler.step(val_score.cpu().numpy())
 
             # ---------------------------------------------------------------------------------------------------------------------------
             # Update and log parameters
@@ -327,14 +328,21 @@ def train_net(net,
 
             # ---------------------------------------------------------------------------------------------------------------------------
             # get best model depends on valid_loss or val_score
-            if metric == 'max':
-                best_value = best_dice_score           # numpy
+            save_model_switch = False
+            if metric == 'max':           # for maximize accuracy or val_score
                 valid_value = val_score.cpu().numpy()
-                cond = best_value < valid_value  # '<' for maximize accuracy or val_score
-            elif metric == 'min':
-                best_value = best_val_loss
+                if epoch == 0:
+                    best_value = 0
+                    cond =True
+                else:
+                    cond = best_value < valid_value
+            elif metric == 'min':        # for minimize loss
                 valid_value = valid_loss
-                cond = best_value > valid_value  # '>' for minimize loss
+                if epoch == 0:
+                    best_value = 1e4
+                    cond =True
+                else:
+                    cond = best_value > valid_value
             if cond:
                 best_value = valid_value
                 torch.save(net.state_dict(),
