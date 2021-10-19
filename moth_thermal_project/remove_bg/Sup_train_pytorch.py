@@ -125,13 +125,13 @@ dir_benchmarks = Path('./data/data_for_Sup_train/benchmarks/')
 
 # ------------------------------------------------------
 # for test
-img_type = '.png'
-val_percent = 0.1
-batch_size = 8
-learning_rate = 1e-3
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-net = UNet(n_channels=args.image_channel, n_classes=2, bilinear=True)
-net.to(device=device)
+# img_type = '.png'
+# val_percent = 0.1
+# batch_size = 8
+# learning_rate = 1e-3
+# device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+# net = UNet(n_channels=args.image_channel, n_classes=2, bilinear=True)
+# net.to(device=device)
 # ------------------------------------------------------
 
 
@@ -270,10 +270,11 @@ def train_net(net,
                 # get mask_contour and weight it for loss calculation (optional)
                 # -----------------------------------------------------------------------------------
                 masks_contour = get_masks_contour(
-                    masks_true.cpu().numpy().astype(np.uint8))  # (b, h, w), torch.int64, [0, 1]
+                    masks_true.cpu().numpy().astype(np.uint8)).to(device)  # (b, h, w), torch.int64, [0, 1]
                 weight_CrossEntropy = 5
+                y = torch.ones(1, dtype=torch.int64).to(device)
                 masks_weighted = torch.where(
-                    masks_contour == 1, weight_CrossEntropy, 1)  # (b, h, w)
+                    masks_contour == 1, weight_CrossEntropy*y, y)  # (b, h, w)
 
                 # caculate weighted loss based on countour
                 masks_pred_one_hot = F.softmax(
