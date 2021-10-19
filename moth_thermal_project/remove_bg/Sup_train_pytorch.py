@@ -10,7 +10,6 @@ import pandas as pd
 from datetime import datetime
 from PIL import Image
 import skimage.io as io
-import cv2
 
 import torch
 import torch.nn as nn
@@ -25,7 +24,7 @@ from utils.data_loading_moth import MothDataset
 from utils.dice_score import dice_loss
 from evaluate import evaluate
 from unet import UNet
-from utils.utils import early_stop, plt_learning_curve, get_data_attribute, mask_contour_weighted
+from utils.utils import early_stop, plt_learning_curve, get_data_attribute, get_masks_contour
 
 
 # =======================================================================================================
@@ -125,14 +124,14 @@ dir_benchmarks = Path('./data/data_for_Sup_train/benchmarks/')
 # # ----------------------------------------------------------------------------
 
 # ------------------------------------------------------
-# test
-# img_type = '.png'
-# val_percent = 0.1
-# batch_size = 8
-# learning_rate=1e-3
-# device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-# net = UNet(n_channels=args.image_channel, n_classes=2, bilinear=True)
-# net.to(device=device)
+# for test
+img_type = '.png'
+val_percent = 0.1
+batch_size = 8
+learning_rate = 1e-3
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+net = UNet(n_channels=args.image_channel, n_classes=2, bilinear=True)
+net.to(device=device)
 # ------------------------------------------------------
 
 
@@ -203,6 +202,8 @@ def train_net(net,
 
     # grad_scaler = torch.cuda.amp.GradScaler(enabled=amp)
     criterion = nn.CrossEntropyLoss()
+    # shape = (b, h, w) if reduction ='none'
+    criterion_3d = nn.CrossEntropyLoss(reduction='none')
     global_step = 0
 
     # Parameters that should be stored.
@@ -231,16 +232,16 @@ def train_net(net,
 
         # ------------------------------------------------------------------------------------------
         # learning rate warmup(optional)
-#         if epoch < warmup_epochs:
-#             warmup_percent_done = epoch/warmup_epochs
-#             warmup_learning_rate = args.lr * \
-#                 (1e-5 + 0.1*(1 - 1e-5)*warmup_percent_done)  # gradual warmup_lr
-#             optimizer = optim.AdamW(net.parameters(), lr=warmup_learning_rate)
-#         elif epoch == warmup_epochs:
-#             optimizer = optim.AdamW(
-#                 net.parameters(), lr=args.lr, weight_decay=1e-3)
-#             scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-#                 optimizer, 'max', patience=20)
+        # if epoch < warmup_epochs:
+        #     warmup_percent_done = epoch/warmup_epochs
+        #     warmup_learning_rate = args.lr * \
+        #         (1e-5 + 0.1*(1 - 1e-5)*warmup_percent_done)  # gradual warmup_lr
+        #     optimizer = optim.AdamW(net.parameters(), lr=warmup_learning_rate)
+        # elif epoch == warmup_epochs:
+        #     optimizer = optim.AdamW(
+        #         net.parameters(), lr=args.lr, weight_decay=1e-3)
+        #     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+        #         optimizer, 'max', patience=20)
         # ------------------------------------------------------------------------------------------
 
         with tqdm(total=n_train, desc=f'Epoch {epoch + 1}/{epochs}', unit='img') as pbar:
@@ -250,7 +251,7 @@ def train_net(net,
             train_loss_collector = []
             for batch in train_loader:
                 images = batch['image']
-                true_masks = batch['mask']
+                masks_true = batch['mask']
 
                 assert images.shape[1] == net.n_channels, \
                     f'Network has been defined with {net.n_channels} input channels, ' \
@@ -258,65 +259,67 @@ def train_net(net,
                     'the images are loaded correctly.'
 
                 images = images.to(device=device, dtype=torch.float32)
-                true_masks = true_masks.to(device=device, dtype=torch.long)
+                masks_true = masks_true.to(device=device, dtype=torch.long)
 
                 # with torch.cuda.amp.autocast(enabled=amp):
                 masks_pred = net(images)
                 print('masks_pred : ', masks_pred.shape)  # (b, class, h, w)
-                print('true_masks : ', true_masks.shape)  # (b, h, w)
-
+                # (b, h, w), torch.int64, [0, 1]
+                print('masks_true : ', masks_true.shape)
                 # -----------------------------------------------------------------------------------
-                # mask_contour weighted(optional)
+                # get mask_contour and weight it for loss calculation (optional)
+                # -----------------------------------------------------------------------------------
+                masks_contour = get_masks_contour(
+                    masks_true.cpu().numpy().astype(np.uint8))  # (b, h, w), torch.int64, [0, 1]
+                weight_CrossEntropy = 5
+                masks_weighted = torch.where(
+                    masks_contour == 1, weight_CrossEntropy, 1)  # (b, h, w)
 
-                # get mask_contour and weight it
-                masks_weighted = []
-                for mask_ in true_masks:
-                    mask_numpy = mask_.cpu().numpy().astype(np.uint8)
-                    mask_weighted = mask_contour_weighted(
-                        mask_numpy, iterations=5, weighted=10)
-                    masks_weighted.append(mask_weighted)
-                masks_weighted = torch.Tensor(masks_weighted).to(
-                    device=device)  # (b, h, w)
+                # caculate weighted loss based on countour
+                masks_pred_one_hot = F.softmax(
+                    masks_pred, dim=1, dtype=torch.float32)                 # (b, class, h, w)
+                masks_true_one_hot = F.one_hot(
+                    masks_true, net.n_classes).float().permute(0, 3, 1, 2)  # (b, h, w) > (b, h, w, class) > (b, class, h, w)
 
-                masks_weighted_2class = torch.stack(
-                    (masks_weighted, masks_weighted), dim=1)              # (b, c, h, w)
+                masks_contour_pred_one_hot = masks_pred_one_hot * \
+                    torch.stack((masks_contour, masks_contour), dim=1)
+                masks_contour_true_one_hot = masks_true_one_hot * \
+                    torch.stack((masks_contour, masks_contour), dim=1)
 
-                # get weighted masks_pred
-                masks_pred_weighted = masks_pred * \
-                    masks_weighted_2class  # (b, c, h, w)
+                cross_entrophy_weighted = (criterion_3d(                                        # nn.CrossEntropyLoss(reduction='none') : (b, h, w)
+                    masks_pred, masks_true) * masks_weighted).mean()
+                dice_loss_allArea = dice_loss(
+                    masks_pred_one_hot, masks_true_one_hot, multiclass=True)
+                dice_loss_contour = dice_loss(
+                    masks_contour_pred_one_hot, masks_contour_true_one_hot, multiclass=True)
+
+                train_loss_contour_weighted = cross_entrophy_weighted + \
+                    dice_loss_allArea + dice_loss_contour*5
+
                 # --------------------------------------------------------------------------------------------
 
-                # mask_contour weighted
-                criterion(masks_pred_weighted, true_masks)
-                # criterion(masks_pred, true_masks)
-                dice_loss(F.softmax(masks_pred, dim=1).float(),             # (b, class, h, w)
-                          F.one_hot(true_masks, net.n_classes).permute(     # (b, class, h, w)
-                    0, 3, 1, 2).float(),
-                    multiclass=True)
-
-                # ------------------------------------------------
-
-                train_loss_batch = criterion(masks_pred, true_masks) \
-                    + dice_loss(F.softmax(masks_pred, dim=1).float(),             # (b, class, h, w)
-                                F.one_hot(true_masks, net.n_classes).permute(     # (b, class, h, w)
-                        0, 3, 1, 2).float(),
-                    multiclass=True)
+                # train_loss_batch = criterion(masks_pred, masks_true) \
+                #     + dice_loss(F.softmax(masks_pred, dim=1).float(),             # (b, class, h, w)
+                #                 F.one_hot(masks_true, net.n_classes).permute(     # (b, class, h, w)
+                #         0, 3, 1, 2).float(),
+                #     multiclass=True)
 
                 # optimizer.zero_grad(set_to_none=True)
                 # grad_scaler.scale(loss_train).backward()
                 # grad_scaler.step(optimizer)
                 # grad_scaler.update()
                 optimizer.zero_grad()
-                train_loss_batch.backward()
+                train_loss_contour_weighted.backward()
                 optimizer.step()
 
                 pbar.update(images.shape[0])
                 global_step += 1
                 # epoch_loss += loss_train.item()
                 train_loss_collector = np.append(
-                    train_loss_collector, train_loss_batch.cpu().detach().numpy())
+                    train_loss_collector, train_loss_contour_weighted.cpu().detach().numpy())
 
-                pbar.set_postfix(**{'loss (batch)': train_loss_batch.item()})
+                pbar.set_postfix(
+                    **{'loss (batch)': train_loss_contour_weighted.item()})
 
             # ==========================================================================================
             # Evaluation round
@@ -383,7 +386,7 @@ def train_net(net,
                 'validation Loss': valid_loss,
                 'images': wandb.Image(images[0].cpu()),
                 'masks': {
-                    'true': wandb.Image(true_masks[0].float().cpu()),
+                    'true': wandb.Image(masks_true[0].float().cpu()),
                     # 'pred': wandb.Image(torch.softmax(masks_pred, dim=1)[0].float().cpu()),
                     'pred': wandb.Image(full_mask),
                 },
