@@ -10,6 +10,7 @@ import pandas as pd
 from datetime import datetime
 from PIL import Image
 import skimage.io as io
+import cv2
 
 import torch
 import torch.nn as nn
@@ -24,7 +25,8 @@ from utils.data_loading_moth import MothDataset
 from utils.dice_score import dice_loss
 from evaluate import evaluate
 from unet import UNet
-from utils.utils import early_stop, plt_learning_curve, get_data_attribute
+from utils.utils import early_stop, plt_learning_curve, get_data_attribute, mask_contour_weighted
+
 
 # =======================================================================================================
 # def get_args():
@@ -48,7 +50,8 @@ parser.add_argument('--image_input_size', '-s_in', dest='size_in',
                     type=str, default='256,256', help='image size input')
 parser.add_argument('--image_output_size', '-s_out', dest='size_out',
                     type=str, default='256,256', help='image size output')
-parser.add_argument('--image-c', dest='im_c', default=3, type=int)
+parser.add_argument('--image_channel', '-c', dest='image_channel',
+                    metavar='Channel', default=3, type=int, help='channel of image input')
 parser.add_argument('--img_type', '-t', dest='img_type',
                     metavar='TYPE', type=str, default='.png', help='image type: .png, .jpg ...')
 
@@ -57,8 +60,8 @@ parser.add_argument('--epochs', '-e', metavar='E',
                     type=int, default=100, help='Number of epochs')
 parser.add_argument('--batch-size', '-b', dest='batch_size',
                     metavar='B', type=int, default=8, help='Batch size')
-parser.add_argument('--learning-rate', '-lr', metavar='LR', type=float, default=1e-3,
-                    help='Learning rate', dest='lr')
+parser.add_argument('--learning-rate', '-lr', dest='lr', metavar='LR', type=float, default=1e-3,
+                    help='Learning rate')
 parser.add_argument('--load', '-f', type=str,
                     default=False, help='Load model from a .pth file')
 parser.add_argument('--validation', '-v', dest='val', type=float, default=10.0,
@@ -93,10 +96,13 @@ dir_benchmarks = Path('./data/data_for_Sup_train/benchmarks/')
 
 # ----------------------------------------------------------------------------
 # convert masks rgb(w,h,c)  to grey(w,h)
+# dir_mask = Path('data/label_waiting_postprocess/mask_selected')
+
 # dir_mask_tmp = Path('./data/data_for_Sup_train/masks_tmp')
 # dir_mask_tmp.mkdir(parents=True, exist_ok=True)
+
 # for i, path in enumerate(dir_mask.glob('*.png')):
-#     mask_name = path.stem
+#     mask_name = path.stem.split('_mask')[0]
 #     mask_ = io.imread(path, as_gray=True)  # (h,w) uint8
 #     mask_int8 = (mask_*255).astype(np.uint8)
 #     mask_bi = np.where(mask_int8 == 0, 0, 255).astype('uint8')
@@ -116,8 +122,19 @@ dir_benchmarks = Path('./data/data_for_Sup_train/benchmarks/')
 #     save_path = dir_img.joinpath(img_name  + '.png')
 #     io.imsave(save_path, img)
 #     print(i, img_name, 'saved' )
-
 # # ----------------------------------------------------------------------------
+
+# ------------------------------------------------------
+# test
+# img_type = '.png'
+# val_percent = 0.1
+# batch_size = 8
+# learning_rate=1e-3
+# device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+# net = UNet(n_channels=args.image_channel, n_classes=2, bilinear=True)
+# net.to(device=device)
+# ------------------------------------------------------
+
 
 def train_net(net,
               device,
@@ -140,7 +157,8 @@ def train_net(net,
         mask_paths), f'number imgs: {len(img_paths)} and masks: {len(mask_paths)} need equal '
 
     df = get_data_attribute(img_paths)
-    assert len(df.Source_Family) == len(img_paths) , f'number of imgs: {len(img_paths)} and data_attribute.csv: {len(df.Source_Family)} need equal '
+    assert len(df.Source_Family) == len(
+        img_paths), f'number of imgs: {len(img_paths)} and data_attribute.csv: {len(df.Source_Family)} need equal '
 
     X_train, X_valid, y_train, y_valid = train_test_split(
         img_paths, mask_paths, test_size=val_percent, random_state=1, stratify=df.Source_Family)
@@ -178,11 +196,11 @@ def train_net(net,
     ''')
 
     # 4. Set up the optimizer, the loss, the learning rate scheduler and the loss scaling for AMP
-    # optimizer = optim.RMSprop(net.parameters(), lr=learning_rate, weight_decay=1e-8, momentum=0.9)
-    optimizer = optim.Adam(
-        net.parameters(), lr=learning_rate)
+    # optimizer =  optim.AdamW(net.parameters(), lr=learning_rate, weight_decay=1e-2)
+    optimizer = optim.Adam(net.parameters(), lr=learning_rate)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, 'max', patience=20)  # goal: maximize Dice score > 'max' / minimize Valid Loss > 'min'
+
     # grad_scaler = torch.cuda.amp.GradScaler(enabled=amp)
     criterion = nn.CrossEntropyLoss()
     global_step = 0
@@ -205,14 +223,30 @@ def train_net(net,
     patience = 50
     trigger_times = 0
     metric = 'max'
+    warmup_epochs = 30
     start_time = time.time()
     for epoch in range(epochs):
         net.train()
         epoch_loss = 0
+
+        # ------------------------------------------------------------------------------------------
+        # learning rate warmup(optional)
+        if epoch < warmup_epochs:
+            warmup_percent_done = epoch/warmup_epochs
+            warmup_learning_rate = args.lr * \
+                (1e-5 + 0.1*(1 - 1e-5)*warmup_percent_done)  # gradual warmup_lr
+            optimizer = optim.AdamW(net.parameters(), lr=warmup_learning_rate)
+        elif epoch == warmup_epochs:
+            optimizer = optim.AdamW(
+                net.parameters(), lr=args.lr, weight_decay=1e-3)
+            scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+                optimizer, 'max', patience=20)
+        # ------------------------------------------------------------------------------------------
+
         with tqdm(total=n_train, desc=f'Epoch {epoch + 1}/{epochs}', unit='img') as pbar:
-            # ------------------------------------------------------------------------------------------
+            # ==========================================================================================
             # Train round
-            # ------------------------------------------------------------------------------------------
+            # ==========================================================================================
             train_loss_collector = []
             for batch in train_loader:
                 images = batch['image']
@@ -228,11 +262,43 @@ def train_net(net,
 
                 # with torch.cuda.amp.autocast(enabled=amp):
                 masks_pred = net(images)
-                print('masks_pred : ', masks_pred.shape)
-                print('true_masks : ', true_masks.shape)
+                print('masks_pred : ', masks_pred.shape)  # (b, class, h, w)
+                print('true_masks : ', true_masks.shape)  # (b, h, w)
+
+                # -----------------------------------------------------------------------------------
+                # mask_contour weighted(optional)
+
+                # get mask_contour and weight it
+                masks_weighted = []
+                for mask_ in true_masks:
+                    mask_numpy = mask_.cpu().numpy().astype(np.uint8)
+                    mask_weighted = mask_contour_weighted(
+                        mask_numpy, iterations=5, weighted=10)
+                    masks_weighted.append(mask_weighted)
+                masks_weighted = torch.Tensor(masks_weighted).to(
+                    device=device)  # (b, h, w)
+
+                masks_weighted_2class = torch.stack(
+                    (masks_weighted, masks_weighted), dim=1)              # (b, c, h, w)
+
+                # get weighted masks_pred
+                masks_pred_weighted = masks_pred * \
+                    masks_weighted_2class  # (b, c, h, w)
+                # --------------------------------------------------------------------------------------------
+
+                # mask_contour weighted
+                criterion(masks_pred_weighted, true_masks)
+                # criterion(masks_pred, true_masks)
+                dice_loss(F.softmax(masks_pred, dim=1).float(),             # (b, class, h, w)
+                          F.one_hot(true_masks, net.n_classes).permute(     # (b, class, h, w)
+                    0, 3, 1, 2).float(),
+                    multiclass=True)
+
+                # ------------------------------------------------
+
                 train_loss_batch = criterion(masks_pred, true_masks) \
-                    + dice_loss(F.softmax(masks_pred, dim=1).float(),
-                                F.one_hot(true_masks, net.n_classes).permute(
+                    + dice_loss(F.softmax(masks_pred, dim=1).float(),             # (b, class, h, w)
+                                F.one_hot(true_masks, net.n_classes).permute(     # (b, class, h, w)
                         0, 3, 1, 2).float(),
                     multiclass=True)
 
@@ -252,9 +318,9 @@ def train_net(net,
 
                 pbar.set_postfix(**{'loss (batch)': train_loss_batch.item()})
 
-            # ------------------------------------------------------------------------------------------
+            # ==========================================================================================
             # Evaluation round
-            # ------------------------------------------------------------------------------------------
+            # ==========================================================================================
             # if global_step % (n_train // (10 * batch_size)) == 0:
             histograms = {}
             for tag, value in net.named_parameters():
@@ -266,7 +332,7 @@ def train_net(net,
 
             net.eval()
             val_score, valid_loss = evaluate(net, val_loader, device)
-#             scheduler.step(val_score.cpu().numpy())
+            scheduler.step(val_score.cpu().numpy())
 
             # ---------------------------------------------------------------------------------------------------------------------------
             # Update and log parameters
@@ -332,15 +398,15 @@ def train_net(net,
             if metric == 'max':           # for maximize accuracy or val_score
                 valid_value = val_score.cpu().numpy()
                 if epoch == 0:
-                    best_value = 0
-                    cond =True
+                    best_value = 1e-4
+                    cond = True
                 else:
                     cond = best_value < valid_value
             elif metric == 'min':        # for minimize loss
                 valid_value = valid_loss
                 if epoch == 0:
                     best_value = 1e4
-                    cond =True
+                    cond = True
                 else:
                     cond = best_value > valid_value
             if cond:
@@ -404,7 +470,7 @@ if __name__ == '__main__':
     # Change here to adapt to your data
     # n_channels=3 for RGB images
     # n_classes is the number of probabilities you want to get per pixel
-    net = UNet(n_channels=3, n_classes=2, bilinear=True)
+    net = UNet(n_channels=args.image_channel, n_classes=2, bilinear=True)
 
     logging.info(f'Network:\n'
                  f'\t{net.n_channels} input channels\n'
