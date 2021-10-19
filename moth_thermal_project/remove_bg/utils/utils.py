@@ -1,6 +1,8 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import cv2
+import torch
 
 
 def plot_img_and_mask(img, mask):
@@ -105,6 +107,7 @@ def early_stop(valid: float, best_value: float,  trigger_times: int = 0, patienc
     #     print('\nTriger Early Stop!')
     return trigger_times
 
+
 def get_data_attribute(img_paths: list) -> pd.DataFrame:
     names_imgs = [path.stem.split('_cropped')[0] for path in img_paths]
 
@@ -117,10 +120,10 @@ def get_data_attribute(img_paths: list) -> pd.DataFrame:
     df.iloc[index_CARS, 1] = 'CARS'
     df.iloc[index_SJTT, 1] = 'SJTT'
 
-    presufix = (df.Name.str.split('CARS' , expand=True).loc[:,0]
-                .str.split('SJTT',expand=True).loc[:,0]
-            .str.rstrip('_')
-            .str.replace('\d',''))
+    presufix = (df.Name.str.split('CARS', expand=True).loc[:, 0]
+                .str.split('SJTT', expand=True).loc[:, 0]
+                .str.rstrip('_')
+                .str.replace('\d', ''))
     df['Family'] = presufix
     index_none = df[df.Family == ''].index.values
     df.Family[index_none] = 'None'
@@ -128,3 +131,14 @@ def get_data_attribute(img_paths: list) -> pd.DataFrame:
     df.to_csv('data_attribute.csv', index=False)
 
     return df
+
+
+def mask_contour_weighted(mask: np.ndarray, iterations: int = 5, weighted: int=2) -> np.ndarray:
+    kernel_ELLIPSE = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, ksize=(3, 3))
+
+    mask_dilate = cv2.dilate(mask, kernel_ELLIPSE, iterations=6)
+    mask_erode = cv2.erode(mask, kernel_ELLIPSE, iterations=iterations)
+    mask_contour = mask_dilate - mask_erode
+    mask_contour_weighted = np.where(mask_contour==1, weighted, 1.0)
+    return mask_contour_weighted
+
