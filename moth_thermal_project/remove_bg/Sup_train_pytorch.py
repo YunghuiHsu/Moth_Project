@@ -231,16 +231,16 @@ def train_net(net,
 
         # ------------------------------------------------------------------------------------------
         # learning rate warmup(optional)
-        if epoch < warmup_epochs:
-            warmup_percent_done = epoch/warmup_epochs
-            warmup_learning_rate = args.lr * \
-                (1e-5 + 0.1*(1 - 1e-5)*warmup_percent_done)  # gradual warmup_lr
-            optimizer = optim.AdamW(net.parameters(), lr=warmup_learning_rate)
-        elif epoch == warmup_epochs:
-            optimizer = optim.AdamW(
-                net.parameters(), lr=args.lr, weight_decay=1e-3)
-            scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-                optimizer, 'max', patience=20)
+#         if epoch < warmup_epochs:
+#             warmup_percent_done = epoch/warmup_epochs
+#             warmup_learning_rate = args.lr * \
+#                 (1e-5 + 0.1*(1 - 1e-5)*warmup_percent_done)  # gradual warmup_lr
+#             optimizer = optim.AdamW(net.parameters(), lr=warmup_learning_rate)
+#         elif epoch == warmup_epochs:
+#             optimizer = optim.AdamW(
+#                 net.parameters(), lr=args.lr, weight_decay=1e-3)
+#             scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+#                 optimizer, 'max', patience=20)
         # ------------------------------------------------------------------------------------------
 
         with tqdm(total=n_train, desc=f'Epoch {epoch + 1}/{epochs}', unit='img') as pbar:
