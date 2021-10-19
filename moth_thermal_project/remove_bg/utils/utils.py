@@ -133,12 +133,21 @@ def get_data_attribute(img_paths: list) -> pd.DataFrame:
     return df
 
 
-def mask_contour_weighted(mask: np.ndarray, iterations: int = 5, weighted: int=2) -> np.ndarray:
+def get_masks_contour(masks: np.ndarray, iterations: int = 5, weighted: float = 2.0) -> torch.Tensor:
+    if masks.ndim == 2:
+        masks = masks[np.newaxis, ...]
+    assert masks.ndim == 3, f'Shape of mask must be (h,w) or (batch, h, w), mask.shape : {masks.shape}'
+    assert masks.dtype == 'uint8', f'dtype of mask need to be "uint8", masks.dtype : {masks.dtype}.\nuse .astype("uint8") convert dtype'
+
     kernel_ELLIPSE = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, ksize=(3, 3))
 
-    mask_dilate = cv2.dilate(mask, kernel_ELLIPSE, iterations=6)
-    mask_erode = cv2.erode(mask, kernel_ELLIPSE, iterations=iterations)
-    mask_contour = mask_dilate - mask_erode
-    mask_contour_weighted = np.where(mask_contour==1, weighted, 1.0)
-    return mask_contour_weighted
+    masks_contour = []
+    for mask_ in masks:
+        mask_dilate = cv2.dilate(mask_, kernel_ELLIPSE, iterations=6)
+        mask_erode = cv2.erode(mask_, kernel_ELLIPSE, iterations=iterations)
+        mask_contour = mask_dilate - mask_erode
+        masks_contour.append(mask_contour)
 
+    masks_contour_tensor = torch.tensor(masks_contour, dtype=torch.long)
+
+    return masks_contour_tensor
