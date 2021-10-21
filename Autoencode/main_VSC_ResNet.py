@@ -43,7 +43,7 @@ parser.add_argument('--input_height', type=int, default=256, help='the height  o
 parser.add_argument('--input_width', type=int, default=256, help='the width  of the input image to network')
 parser.add_argument('--output_height', type=int, default=256, help='the height  of the output image to network')
 parser.add_argument('--output_width', type=int, default=256, help='the width  of the output image to network')
-parser.add_argument("--nEpochs", type=int, default=10000, help="number of epochs to train for")
+parser.add_argument("--nEpochs", type=int, default=15000, help="number of epochs to train for")
 parser.add_argument("--start_epoch", default=1, type=int, help="Manual epoch number (useful on restarts)")
 parser.add_argument('--lr', type=float, default=0.0002, help='learning rate, default=0.0002')
 parser.add_argument('--beta1', type=float, default=0.5, help='beta1 for adam. default=0.5')
@@ -182,6 +182,7 @@ def main():
 
     # 載入pretrained的 ResNet50
     resnet_pretrained = torch.load("model/vsc_wgan/pretrained_fam_classification_resnet50_20210613.pth")
+#     resnet_pretrained = torch.load("model/vsc_wgan/pretrained_fam_classification_resnet50_20210613.pth", map_location=lambda storage, loc: storage.cpu())
     pretrained_dict, resnet50_dict = resnet_pretrained['model_state'], resnet50.state_dict()      # 載入權重參數
     pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in resnet50_dict}            # 更新pretrained model的key與value，使之與resnet50一致
     resnet50_dict.update(pretrained_dict)                                                         # 將resnet50的權重更新為pretrained model
@@ -244,7 +245,8 @@ def main():
             iteration, 
             len(train_data_loader), 
             time_cost//(60*60), 
-            time_cost//60%60, time_cost%60
+            time_cost//60%60, 
+            time_cost%60
         )
 
         loss_info = '[loss_rec, loss_margin, lossE_real_kl, lossE_rec_kl, lossE_fake_kl, lossG_rec_kl, lossG_fake_kl,]'
