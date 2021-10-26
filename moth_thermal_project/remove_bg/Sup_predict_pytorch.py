@@ -82,6 +82,7 @@ def predict_img(net,
 #         return f'{split[0]}{args.mask_suffix}{split[1]}'
 #     return args.output or list(map(_generate_name, args.input))
 
+
 def mask_to_image(mask: np.ndarray):
     if mask.ndim == 2:
         mask_ = (mask * 255).astype(np.uint8)
@@ -96,6 +97,7 @@ def mask_to_image(mask: np.ndarray):
 
 # ==========================================================================================================================
 
+
 if __name__ == '__main__':
     args = get_args()
     in_files = args.input
@@ -108,7 +110,6 @@ if __name__ == '__main__':
     save_to_mask.mkdir(exist_ok=True)
     save_to_rmbg = model_dir.joinpath('Predict_rmbg')
     save_to_rmbg.mkdir(exist_ok=True)
-
 
     net = UNet(n_channels=3, n_classes=2)
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
@@ -125,6 +126,7 @@ if __name__ == '__main__':
         logging.info(f'\t{idx:4d}, Predicting image {filename} ...')
 
         # img_pil = Image.open(filename)
+        print(f'{idx:4f} loading {filename}')
         img_ndarray = io.imread(filename)
         img_pil = Image.fromarray(img_ndarray)
 
@@ -140,41 +142,51 @@ if __name__ == '__main__':
             fname = Path(filename).stem
             logging.info(f'Mask saved to {fname}')
 
-            ## loading original img
-            ori_img = img_ndarray/255 # (h,w,c).  [0, 255], uint8 > [0, 1], float64
+            # loading original img
+            # (h,w,c).  [0, 255], uint8 > [0, 1], float64
+            ori_img = img_ndarray/255
             # ori_img = resize(ori_img, output_shape=(256, 256, 3))
 
-            ## transform mask to black / white
-            m_mask = mask_to_image(mask)                                    # (n, h ,w), [0, 1], float64 > (h, w), [0, 255], uint8
-            norm_mask = (m_mask-m_mask.min()) / (m_mask.max()-m_mask.min()) # (h ,w, 3), [0,1], flaot64
+            # transform mask to black / white
+            # (n, h ,w), [0, 1], float64 > (h, w), [0, 255], uint8
+            m_mask = mask_to_image(mask)
+            norm_mask = (m_mask-m_mask.min()) / (m_mask.max() -
+                                                 m_mask.min())  # (h ,w, 3), [0,1], flaot64
             norm_mask3 = np.stack(
                 [norm_mask, norm_mask, norm_mask], axis=2)   # (h ,w, 3)
-            ### transform mask to black(0) / white(1) depends on threshold
-            bin_mask3 = np.where(norm_mask3 > 0.5, 1.0, 0.0) #  (h ,w, 3), [0/1], flaot64
+            # transform mask to black(0) / white(1) depends on threshold
+            # (h ,w, 3), [0/1], flaot64
+            bin_mask3 = np.where(norm_mask3 > 0.5, 1.0, 0.0)
 
-            ### make color mask 
-            white_mask = 1-bin_mask3   
+            # make color mask
+            white_mask = 1-bin_mask3
             blue_mask = np.zeros_like(bin_mask3)
-            blue_mask[...,2] =  white_mask[...,2]  # assign blue channel as 1.0 by w_mask
+            # assign blue channel as 1.0 by w_mask
+            blue_mask[..., 2] = white_mask[..., 2]
             color_mask = blue_mask
-            img_rmbg = (bin_mask3 * ori_img) + color_mask  # (h ,w, 3), [0, 1], flaot64
+            # (h ,w, 3), [0, 1], flaot64
+            img_rmbg = (bin_mask3 * ori_img) + color_mask
 
-            ## ploting checking fig
+            # ploting checking fig
             img_list = [ori_img, bin_mask3, img_rmbg]
             title_list = ['Original image', 'U-Net mask', 'img_rmbg']
             fig = plt_result(img_list, title_list)
-            path_fig_save = save_to_check.joinpath(fname + '_UnetChecking.jpg')
+            path_fig_save = save_to_check.joinpath(fname + '__checking_Unet.jpg')
             fig.savefig(path_fig_save, dpi=100, bbox_inches='tight')
-            
-            ## save mask
-            binary_mask = (bin_mask3[:, :, 0]*255).astype('uint8')          # (h, w), [0/255], uint8
-            path_mask_save = save_to_mask.joinpath(fname + '_UnetMask.png')
+
+            # save mask
+            # (h, w), [0/255], uint8
+            binary_mask = (bin_mask3[:, :, 0]*255).astype('uint8')
+            path_mask_save = save_to_mask.joinpath(fname + '_mask_Unet.png')
             io.imsave(path_mask_save, binary_mask)
 
-            ## save img_rmbg
-            img_rmbg_uint8 = (img_rmbg*255).astype('uint8')          # (h, w, c). [0,1] float64 > [0,255], uint8
-            path_img_rmbg_save = save_to_mask.joinpath(fname + '_UnetRmbg.png')
+            # save img_rmbg
+            # (h, w, c). [0,1] float64 > [0,255], uint8
+            img_rmbg_uint8 = (img_rmbg*255).astype('uint8')
+            path_img_rmbg_save = save_to_rmbg.joinpath(fname + '_rmbg_Unet.png')
             io.imsave(path_img_rmbg_save, img_rmbg_uint8)
+
+            print(f'{idx:4d} pred_mask of {fname} saved')
 
         if args.viz:
             logging.info(

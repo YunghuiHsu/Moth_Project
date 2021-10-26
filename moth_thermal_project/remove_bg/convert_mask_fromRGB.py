@@ -7,61 +7,59 @@ import skimage.io as io
 from skimage import io, color
 import cv2
 from PIL import Image
+from skimage.transform import resize
 
-
-# ============================================================================================================================
+# ===============================================================================================
 # convert_mask_from RGB
+# ===============================================================================================
+# dir_origin = Path('../crop/origin')
+# imgs_origin = list(dir_origin .glob('*.png'))
 
-dir_origin = Path('../crop/origin')
-imgs_origin = list(dir_origin .glob('*.png'))
+# dir_mask = Path('data/label_waiting_postprocess/mask_waitinting_for_posrprocess/for_rgb_background_fill/mask')
+# imgs_mask = list(dir_mask.glob('*.png'))
+# print(f'file size : {len(imgs_mask)}')
 
-dir_mask = Path('data/label_waiting_postprocess/rgb_selected/rgb_fill/')
-imgs_mask = list(dir_mask.glob('*.png'))
-print(f'file size : {len(imgs_mask)}')
+# dir_save = dir_mask.joinpath('mask_convert')
+# dir_save.mkdir(exist_ok=True)
 
-dir_save = dir_mask.joinpath('convert')
-dir_save.mkdir(exist_ok=True)
+# for idx, path in enumerate(imgs_mask):
+#     img = io.imread(path, as_gray=True)  # img.shape (h,w,c)， c = r, g, b, a
+#     img_name = path.stem.split('_rgb')[0]
 
-for idx, path in enumerate(imgs_mask):
-    img = io.imread(path, as_gray=True)  # img.shape (h,w,c)， c = r, g, b, a
-    img_name = path.stem.split('。')[0]
+#     # for rgb色塊圖，背景已處理為黑色的mask
+#     img_ = (img*255).astype('uint8')
+#     img_mask = np.where(img_ == 0, 0, 255).astype(np.uint8)
 
-    # for rgb色塊圖，背景已處理為黑色的mask
-    img_ = (img*255).astype('uint8')
-    img_mask = np.where(img_ == 0, 0, 255).astype(np.uint8)
+#     # loading original img by img_name
+#     path_origin = dir_origin.joinpath(img_name + '.png')
+#     img_origin = io.imread(path_origin)
 
-    # loading original img by img_name
-    path_origin = dir_origin.joinpath(img_name + '.png')
-    img_origin = io.imread(path_origin)
+#     # save img_mask and img_origin into dir_mask
+#     for count, img_ in enumerate([img_mask, img_origin]):
+#         if count == 0:
+#             save_name = img_name + '_mask_rgbfill' + '.png'
+#         elif count == 1:
+#             save_name = img_name + '.png'
 
-    # save img_mask and img_origin into dir_mask
-    for count, img_ in enumerate([img_mask, img_origin]):
-        if count == 0:
-            save_name = img_name + '_mask' + '.png'
-        elif count == 1:
-            save_name = img_name + '.png'
+#         save_path = dir_save.joinpath(save_name)
+#         Image.fromarray(img_).save(save_path)
+#         print(idx, img_name, 'saved')
 
-        save_path = dir_save.joinpath(save_name)
-        Image.fromarray(img_).save(save_path)
-        print(idx, img_name, 'saved')
-
-# ==================================================================================================================
-
-# convert_from remove.bg 
-
+# ==============================================================================================
+# convert_from remove.bg
+# ===============================================================================================
 # dir_origin = Path('../crop/origin')
 # imgs_origin = list(dir_origin .glob('*.png'))
 
 
-# file = 'rgb_background_for_fill'  # file_for_rmbg
+# # file = 'rgb_background_for_fill'  # file_for_rmbg
 # dir_mask = Path(
-#     f'data/label_waiting_postprocess/mask_waitinting_for_posrprocess/{file}/mask')
-# imgs_mask = dir_mask.glob('*.png')
+#     f'data/label_waiting_postprocess/mask_waitinting_for_posrprocess/for_removebg/spot_color_failure/mask')
+# imgs_mask = list(dir_mask.glob('*.png'))
+# print(f'file size : {len(imgs_mask)}')
 
-
-# dir_save = Path(f'data/tmp/mask_for_pick_{file}')
-# if not dir_save.exists():
-#     dir_save.mkdir()
+# dir_save = dir_mask.joinpath('mask_convert')
+# dir_save.mkdir(exist_ok=True)
 
 
 # err_name = []
@@ -70,40 +68,33 @@ for idx, path in enumerate(imgs_mask):
 #         img_rmbg = io.imread(path)  # (256, 256, 4)
 #         img_name = path.stem.replace('-removebg-preview', '')
 
-#         # reading  alpha channel as mask, background == 0(mask), target(moth) == 255
+#         ## reading  alpha channel as mask, background == 0(mask), target(moth) == 255
 #         mask_ = img_rmbg[..., 3]  # (256, 256)
-#         # convert all non black(0) to white(255)
+#         ## convert all non black(0) to white(255)
 #         img_mask = np.where(mask_ == 0, 0, 255).astype('uint8')
 
-#         # loading original img by img_name
+#         save_name = img_name + '_mask_removeweb' + '.png'
+#         save_path = dir_save.joinpath(save_name)
+#         io.imsave(save_path, mask_)
+#         print(idx, img_name, 'saved')
+
+#         ## loading original img by img_name
 #         path_origin = dir_origin.joinpath(img_name + '.png')
 #         img_origin = io.imread(path_origin)
 
-#         # save img_mask and img_origin into dir_mask
-#         for i, img_ in enumerate([img_mask, img_origin, img_rmbg]):
-#             if i == 0:
-#                 save_name = img_name + '_mask' + '.png'
-#             elif i == 1:
-#                 save_name = img_name + '.png'
-#             elif i == 2:
-#                 save_name = img_name + '_rmbg' + '.png'
-
-#             save_path = dir_save.joinpath(save_name)
-#             Image.fromarray(img_).save(save_path)
-
-#         print(idx, img_name, 'saved')
-
 #     except FileNotFoundError as err:
 #         err_name.append(img_name)
-#         print(err)
+#         print(err, idx, img_name)
 
+# ## check error name
+# print(err_name)
 
 # if file == 'file_for_rmbg':
 #     error_name = ['GEO104_CARS0374_-_cropped',
-#                   'GEO125_SJTT2145_1_2_male_cropped', 
+#                   'GEO125_SJTT2145_1_2_male_cropped',
 #                   'GEO125_SJTT2204_1_2_male_cropped']
 #     correct_name = ['GEO104_CARS0374 -_cropped',
-#                   'GEO125_SJTT2145_1 2_male_cropped', 
+#                   'GEO125_SJTT2145_1 2_male_cropped',
 #                   'GEO125_SJTT2204_1 2_male_cropped']
 # elif file == 'rgb_background_for_fill':
 #     error_name = ['GEO026_SJTT2158_1_2_female_cropped',
@@ -121,33 +112,25 @@ for idx, path in enumerate(imgs_mask):
 #                   'Not_id_yet_CARS1710_cropped',
 #                   'URA02_SJTT0747_1 _male_cropped']
 
-# for idx, name in  enumerate(correct_name):
-#     path = dir_origin.joinpath(name + '.png')
-#     img = io.imread(path)
-#     save_name = name + '.png'
-#     save_path = dir_save.joinpath(save_name)
-#     Image.fromarray(img).save(save_name)
-#     print(idx, name, 'saved')
-
 # ===============================================================================================
-
 # convert from MS Paint3D_rmbg_inverse
+# ===============================================================================================
 # 處理小畫家3D 魔術選取、去背的圖片(圖檔為標本主體被移除、僅保留背景的圖片)
-# 處理流程 : 
-# 讀取僅有背景(mask)的圖檔 
-# > 以灰階讀取，得到主體為白色(== 255)、背景非白(!=255)的影像 
+# 處理流程 :
+# 讀取僅有背景(mask)的圖檔
+# > 以灰階讀取，得到主體為白色(== 255)、背景非白(!=255)的影像
 # >  將非白的畫素全部轉為黑色(0)，即得到mask
 
 # dir_origin = Path('../crop/origin')
 # imgs_origin = list(dir_origin .glob('*.png'))
 
-# # dir_mask = './bk_mask_manul/'
+# ## dir_mask = './bk_mask_manul/'
 # dir_mask = Path('data/label_waiting_postprocess/mask_waitinting_for_posrprocess/for_smart_rmbg/mask')
 # imgs_mask = list(dir_mask.glob('*.png'))
 # print(len(imgs_mask))
 
 # dir_save = dir_mask.joinpath('mask_convert')
-# dir_save.mkdir(exist_ok=True)
+# dir_save.mkdir(parents=True, exist_ok=True)
 
 # err_name = []
 # for idx, path in enumerate(imgs_mask):
@@ -155,52 +138,103 @@ for idx, path in enumerate(imgs_mask):
 #         # img_mask_ = io.imread(path)  # (256, 256, 4)
 #         img_mask_ = io.imread(path, as_gray=True)
 #         img_mask_ = (img_mask_*255).astype('uint8')
-#         img_name = path.stem
+#         img_name = path.stem.split('_cropped')[0]
 
 #         # reading  alpha channel as mask, background == 0(mask), target(moth) == 255
 #         # mask_ = img_mask_[..., 3]  # (256, 256)
 
 #         # convert and inverse all non white(!=255) to black(0)
-#         # img_mask = np.where(mask_ == 0, 0, 255).astype('uint8')
-#         img_mask = np.where(img_mask_ == 255, 255, 0).astype('uint8')
-        
-#         # loading original img by img_name
-
-#         path_origin = dir_origin.joinpath(img_name + '.png')
-#         img_origin = io.imread(path_origin)
+#         img_mask = np.where(img_mask_ == 255, 0, 255).astype('uint8')
 
 #         # save img_mask and img_origin into dir_mask
-#         for i, img_ in enumerate([img_mask, img_origin]):
-#             if i == 0:
-#                 save_name = img_name + '_mask' + '.png'
-#             elif i == 1:
-#                 save_name = img_name + '.png'
-
-#             save_path = dir_save.joinpath(save_name)
-#             Image.fromarray(img_).save(save_path)
-
+#         save_name = img_name + '_cropped' + '_mask_painter3d' + '.png'
+#         save_path = dir_save.joinpath(save_name)
+#         io.imsave(save_path, img_mask)
 #         print(idx, img_name, 'saved')
+
+#         ## loading original img by img_name
+#         path_origin = dir_origin.joinpath(img_name + '_cropped' + '.png')
+#         img_origin = io.imread(path_origin)
 
 #     except FileNotFoundError as err:
 #         err_name.append(img_name)
 #         print(err)
 
-# -----------------------------------------------------------------------------------------
-# masks = []
-# for f in file:
-#     path = dir_mask + f 
-#     img = io.imread(path + '.png') # img.shape (h,w,c)， c = r, g, b, a
-#     mask_ = img[..., 3]  # 僅讀取alpha通道。透明的區域會在蛾類標本本身，即數值為0的黑色區域
-#     mask = np.where(mask_ == 0, 256, 0).astype('uint8')  # 黑白反轉，將mask反轉為背景(亦即讓背景數值為0)
-#     masks.append(mask)
-#     save_dir =  os.path.join(dir_mask, 'convert')
-#     if not os.path.exists(save_dir):
-#         os.makedirs(save_dir)
-#     io.imsave(save_dir + '_mask' + '.png', mask)
+# ## check error name
+# print(err_name)
 
-# img_name.split('.')
+# ============================================================================================
+# 將所有mask [0 or 255], uint8, 單通道(channel=0)的，結合原圖、產出背景為藍色的去背影像
+# ============================================================================================
 
-# Image.fromarray(masks[0]).show()  # 檢視影像
+dir_origin = Path('../crop/origin')
+# imgs_origin = list(dir_origin .glob('*.png'))
 
-# io.imsave(path + '_mask' + '.png', mask)
-# img.shape
+## dir_mask = './bk_mask_manul/'
+dir_mask = Path(
+    'data/label_waiting_postprocess/mask_waitinting_for_posrprocess/mask_convert')
+imgs_mask = list(dir_mask.glob('*.png'))
+print(len(imgs_mask))
+# imgs_mask = [path for path in dir_mask.iterdir() if "_mask" in path.stem]
+
+
+
+dir_save = dir_mask.joinpath('mask_rmbg')
+dir_save.mkdir(parents=True, exist_ok=True)
+
+
+def img_rmbg_fill(black_mask: np.ndarray, img: np.ndarray, color: str = 'blue'):
+    '''
+    color:: 'blue', 'black'.
+    black_mask:: shape=(h,w,c), dtype=uint8.
+    img:: shape=(h,w,c), dtype=uint8.
+    '''
+    assert black_mask.dtype == 'uint8' and img.dtype == 'uint8', 'dtype must be "uint8"'
+    assert black_mask.shape[2] == 3 and img.shape[
+        2] == 3, 'shape and channelmust be (h,w,c) and 3'
+
+    if color == 'black':
+        color_mask = black_mask
+    elif color == 'blue':
+        white_mask = (255-black_mask)
+        blue_mask = np.zeros_like(white_mask)
+        blue_mask[..., 2] = white_mask[..., 2]
+        color_mask = blue_mask
+
+    img_rmbg_color = ((black_mask/255)*img + color_mask).astype(np.uint8)
+    return img_rmbg_color
+
+
+for idx, path in enumerate(imgs_mask):
+    # get path
+    msk_path = path
+    fname = path.stem.split('_mask')[0]
+    img_path = dir_origin.joinpath(fname + '.png')
+
+    # prepare data to [0,255], channel=3
+    origin_img = io.imread(img_path)
+    if not origin_img[..., 0].shape == (256, 256):
+        # print(f'origin_img need resize: {origin_img.shape} ')
+        origin_img = resize(origin_img, (256, 256))
+        origin_img_255 = (origin_img)*255
+        origin_img = origin_img_255.astype(np.uint8)
+
+    mask = io.imread(msk_path, as_gray=True)
+
+    if mask.shape is not (256, 256):
+        mask = resize(mask, (256, 256))
+    if not mask.max() > 1:
+        mask = mask*255
+    mask = mask.astype(np.uint8)
+    mask3 = np.stack((mask, mask, mask), axis=2) # (h,w) > (h,w,3)
+    ## get image with background removed and fill with specified color
+    img_rmbg = img_rmbg_fill(mask3, origin_img, color='blue')
+
+    ## save image
+    img_rmbg_name = path.stem.replace('mask', 'rmbg')
+    save_path_rmbg = dir_save.joinpath(img_rmbg_name + '.png')
+    io.imsave(save_path_rmbg, img_rmbg)
+    print(idx, img_rmbg_name, 'saved')
+
+    io.imsave(dir_save.joinpath(fname + '.png'), origin_img)
+    print(idx, fname, 'saved')

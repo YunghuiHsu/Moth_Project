@@ -1,3 +1,4 @@
+import argparse
 from PIL import Image
 import os
 import sys
@@ -5,6 +6,8 @@ import glob
 from pathlib import Path
 import numpy as np
 import pandas as pd
+import time
+from datetime import datetime
 from skimage import io
 from skimage.transform import resize
 import matplotlib.pyplot as plt
@@ -13,7 +16,29 @@ import matplotlib.pyplot as plt
 from func.postprocessing import find_cntr_condition, crf, find_cntr
 from func.tool import get_fname
 from func.plot import plt_result
-os.environ["CUDA_VISIBLE_DEVICES"] = '1'
+
+
+# =======================================================================================================
+# def get_args():
+parser = argparse.ArgumentParser(
+    description='PoaTprocess masks')
+
+# enviroment
+parser.add_argument('--gpu', '-g', dest='gpu', default='0')
+
+# data
+parser.add_argument('--MASKDIR', '-i' , dest='MASKDIR',
+                    default='data/label_waiting_postprocess/mask_waitinting_for_posrprocess/mask_for_postprocess')
+parser.add_argument('--ORIGINDIR', '-o' , dest='ORIGINDIR',
+                    default='../crop/origin')
+parser.add_argument('--SAVEDIR', '-s', dest='SAVEDIR',
+                    default='data/postprocessed')
+parser.add_argument('--postfix', '-p', dest='postfix', type=str,
+                    default='_mask', help="postfix of mask file for split out image name ")
+args = parser.parse_args()
+
+os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
+# =======================================================================================================
 
 # # (1) sup+cntr (2)+crf (3) +cntr
 # --------------------------------------------------------------------------------------
@@ -22,29 +47,25 @@ os.environ["CUDA_VISIBLE_DEVICES"] = '1'
 # 不過初步當sup_train模型還不能使用時，需要先用unsup_train以及手動去背的結果來使用
 # --------------------------------------------------------------------------------------
 
-ORIGIN = Path('../crop/origin')
+ORIGIN = Path(args.ORIGINDIR)
 # UnsupCV2DIR = Path('model/Unsup_rmbg/result_sample/predict_img_postprocessd/')
 # MASKDIR = 'data/bk_mask_convert/'
 # SAVEDIR = f'data/processed/finaluse/'
-MASKDIR = Path('data/label_waiting_postprocess')
-SAVEDIR = Path('data/postProcessed')
-mask_path = MASKDIR.rglob('*.png')
-print(len(list(MASKDIR.rglob('*.png'))))
+
+
+MASKDIR = Path(args.MASKDIR)
+time_ = datetime.now().strftime("%y%m%d_%H%M")
+SAVEDIR = Path(args.SAVEDIR).joinpath(time_)
+
+mask_path = MASKDIR.glob('*.png')
+print(len(list(MASKDIR.glob('*.png'))))
 # mask_path = [os.path.join(MASKDIR, i) for i in masks if os.path.splitext(i)[-1].lower() in ['.jpg', '.png', '.jpeg']]
-
-# origin_path = [os.path.join(ORIGIN, get_fname(i) + '.jpg') for i in masks]
-origin_path = [ORIGIN.joinpath(path.stem.split('_UnetMask')[0] + '.png')
-               for path in MASKDIR.rglob('*.png')]
-# new_path = [os.path.join(MASKDIR, i) for i in masks]
-
-print(len(origin_path))
-
 
 def img_rmbg_fill(black_mask: np.ndarray, img: np.ndarray, color: str = 'blue'):
     '''
     color:: 'blue', 'black'.
     black_mask:: shape=(h,w,c), dtype=uint8.
-    img:: shape=(h,w,c), dtype=uint8.
+    img:: shape=(h,w,c), dtype=uint8
     '''
     assert black_mask.dtype == 'uint8' and img.dtype == 'uint8', 'dtype must be "uint8"'
     assert black_mask.shape[2] == 3 and img.shape[
@@ -63,14 +84,12 @@ def img_rmbg_fill(black_mask: np.ndarray, img: np.ndarray, color: str = 'blue'):
 
 
 for idx, path in enumerate(mask_path):
-    # for i in range(1):
     # get path
-    img_path = origin_path[idx]
-    fname = img_path.stem
+    fname = path.stem.split('_cropped')[0] + '_cropped'
     msk_path = path
     
-
     # prepare data to [0,255], channel=3
+    img_path = ORIGIN.joinpath(fname + '.png' )
     origin_img = io.imread(img_path)
     origin_img = resize(origin_img, (256, 256))
     origin_img_255 = (origin_img)*255
@@ -86,33 +105,34 @@ for idx, path in enumerate(mask_path):
     mask3 = np.stack((mask, mask, mask), axis=2)
 
     # ============================================================================================================================================
-    # cntr 
-    # find contour by cv2.findContours(mask), return mask [h,w,3]
+    ## cntr 
+    ## find contour by cv2.findContours(mask), return mask [h,w,3]
     mask_unsup2cntr = find_cntr_condition(
         mask3, condition=62000)             # (h,w,c), uint8
     img_unsup2cntr = img_rmbg_fill(mask_unsup2cntr, origin_img_255)
 
     # ------------------------------------------------------------------------------------------
-    # crf
-    # find contour by crf(img, mask), return only 'R' channel
+    ## crf
+    ## find contour by crf(img, mask), only get from 'R' channel, return mask [h,w,3]
     crf_output = crf(origin_img_255, mask3)
     mask_crf = crf_output[:, :, 0] + mask3[:, :, 0]
     mask_crf = np.repeat(mask_crf, repeats=3).reshape((256, 256, 3))
     img_crf = img_rmbg_fill(mask_crf, origin_img_255, color='blue')
 
     # ------------------------------------------------------------------------------------------
-    # crf_cntr 
-    # find contour by cv2.findContours(mask_crf) , return mask [h,w,3]
+    ## crf_cntr 
+    ## find contour by cv2.findContours(mask_crf) , return mask [h,w,3]
     mask_cntr = find_cntr_condition(mask_crf, condition=62000)
     img_crf_cntr = img_rmbg_fill(mask_cntr, origin_img_255, color='blue')
 
-#     # show unsup+cv2 result
-#     unsupcv2_img = io.imread(os.path.join(UnsupCV2DIR, fname+'.png'))
+    # ------------------------------------------------------------------------------------------
+    ## show unsup+cv2 result
+    # unsupcv2_img = io.imread(os.path.join(UnsupCV2DIR, fname+'.png'))
 
     # ============================================================================================================================================
-    # save out
+    ## save out
 
-    # plotting checking.jpg
+    ## plotting checking.jpg
     p_img = [origin_img,
              #               unsupcv2_img,
              img_unsup2cntr,
