@@ -208,10 +208,10 @@ def img_rmbg_fill(black_mask: np.ndarray, img: np.ndarray, color: str = 'blue'):
 for idx, path in enumerate(imgs_mask):
     # get path
     msk_path = path
-    fname = path.stem.split('_mask')[0]
-    img_path = dir_origin.joinpath(fname + '.png')
-
+    fname = path.stem.split('_cropped')[0] + '_cropped'
+    
     # prepare data to [0,255], channel=3
+    img_path = dir_origin.joinpath(fname + '.png')
     origin_img = io.imread(img_path)
     if not origin_img[..., 0].shape == (256, 256):
         # print(f'origin_img need resize: {origin_img.shape} ')
@@ -226,7 +226,8 @@ for idx, path in enumerate(imgs_mask):
     if not mask.max() > 1:
         mask = mask*255
     mask = mask.astype(np.uint8)
-    mask3 = np.stack((mask, mask, mask), axis=2) # (h,w) > (h,w,3)
+    mask3 = np.stack([mask]*3, axis=2) # Create 3-channel alpha mask (h,w) > (h,w,3)。  np.dstack([mask]*3)
+
     ## get image with background removed and fill with specified color
     img_rmbg = img_rmbg_fill(mask3, origin_img, color='blue')
 
