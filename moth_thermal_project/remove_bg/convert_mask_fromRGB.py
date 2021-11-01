@@ -6,8 +6,10 @@ import matplotlib as plt
 import skimage.io as io
 from skimage import io, color
 import cv2
-from PIL import Image
+from PIL import Image, ImageFilter
 from skimage.transform import resize
+import cv2
+
 
 # ===============================================================================================
 # convert_mask_from RGB
@@ -48,46 +50,45 @@ from skimage.transform import resize
 # ==============================================================================================
 # convert_from remove.bg
 # ===============================================================================================
-# dir_origin = Path('../crop/origin')
-# imgs_origin = list(dir_origin .glob('*.png'))
+dir_origin = Path('../crop/origin')
+imgs_origin = list(dir_origin.glob('*.png'))
 
 
-# # file = 'rgb_background_for_fill'  # file_for_rmbg
-# dir_mask = Path(
-#     f'data/label_waiting_postprocess/mask_waitinting_for_posrprocess/for_removebg/spot_color_failure/mask')
-# imgs_mask = list(dir_mask.glob('*.png'))
-# print(f'file size : {len(imgs_mask)}')
+# file = 'rgb_background_for_fill'  # file_for_rmbg
+dir_mask = Path(
+    f'data/label_waiting_postprocess/mask_waitinting_for_posrprocess/for_removebg')
+imgs_mask = list(dir_mask.glob('*.png'))
+print(f'file size : {len(imgs_mask)}')
 
-# dir_save = dir_mask.joinpath('mask_convert')
-# dir_save.mkdir(exist_ok=True)
+dir_save = dir_mask.joinpath('mask_convert')
+dir_save.mkdir(exist_ok=True)
 
+err_name = []
+for idx, path in enumerate(imgs_mask):
+    try:
+        img_rmbg = io.imread(path)  # (256, 256, 4)
+        img_name = path.stem.replace('-removebg-preview', '')
 
-# err_name = []
-# for idx, path in enumerate(imgs_mask):
-#     try:
-#         img_rmbg = io.imread(path)  # (256, 256, 4)
-#         img_name = path.stem.replace('-removebg-preview', '')
+        ## reading  alpha channel as mask, background == 0(mask), target(moth) == 255
+        mask_ = img_rmbg[..., 3]  # (256, 256)
+        ## convert all non black(0) to white(255)
+        img_mask = np.where(mask_ < 128, 0, 255).astype('uint8')
 
-#         ## reading  alpha channel as mask, background == 0(mask), target(moth) == 255
-#         mask_ = img_rmbg[..., 3]  # (256, 256)
-#         ## convert all non black(0) to white(255)
-#         img_mask = np.where(mask_ == 0, 0, 255).astype('uint8')
+        save_name = img_name + '_mask_removeweb' + '.png'
+        save_path = dir_save.joinpath(save_name)
+        io.imsave(save_path, img_mask)
+        print(idx, img_name, 'saved')
 
-#         save_name = img_name + '_mask_removeweb' + '.png'
-#         save_path = dir_save.joinpath(save_name)
-#         io.imsave(save_path, mask_)
-#         print(idx, img_name, 'saved')
+        ## loading original img by img_name
+        path_origin = dir_origin.joinpath(img_name + '.png')
+        img_origin = io.imread(path_origin)
 
-#         ## loading original img by img_name
-#         path_origin = dir_origin.joinpath(img_name + '.png')
-#         img_origin = io.imread(path_origin)
+    except FileNotFoundError as err:
+        err_name.append(img_name)
+        print(err, idx, img_name)
 
-#     except FileNotFoundError as err:
-#         err_name.append(img_name)
-#         print(err, idx, img_name)
-
-# ## check error name
-# print(err_name)
+## check error name
+print(err_name)
 
 # if file == 'file_for_rmbg':
 #     error_name = ['GEO104_CARS0374_-_cropped',
@@ -172,12 +173,11 @@ dir_origin = Path('../crop/origin')
 
 ## dir_mask = './bk_mask_manul/'
 dir_mask = Path(
-    'data/label_waiting_postprocess/mask_waitinting_for_posrprocess/mask_convert')
+    'data\label_waiting_postprocess\mask_waitinting_for_posrprocess\mask_for_rmbg')
+    
 imgs_mask = list(dir_mask.glob('*.png'))
 print(len(imgs_mask))
 # imgs_mask = [path for path in dir_mask.iterdir() if "_mask" in path.stem]
-
-
 
 dir_save = dir_mask.joinpath('mask_rmbg')
 dir_save.mkdir(parents=True, exist_ok=True)
@@ -239,3 +239,101 @@ for idx, path in enumerate(imgs_mask):
 
     io.imsave(dir_save.joinpath(fname + '.png'), origin_img)
     print(idx, fname, 'saved')
+
+
+
+# ============================================================================================
+# 將mask做膨脹-侵蝕、邊緣平滑、改善邊緣缺失
+# ============================================================================================
+
+dir_origin = Path('../crop/origin')
+
+dir_mask = Path('data/label_waiting_postprocess/mask_waitinting_for_posrprocess/mask_for_dilate')
+imgs_mask = list(dir_mask.glob('*.png'))
+print(f'file size : {len(imgs_mask)}')
+
+dir_save = dir_mask.joinpath('mask_convert')
+dir_save.mkdir(exist_ok=True)
+
+
+# mask = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
+# Image.fromarray(img).show()
+# _, img = cv2.threshold(img, 127, 255, 0)
+# Image.fromarray(img).show()
+
+
+for idx, path in enumerate(imgs_mask):
+    # get path
+    msk_path = path
+    fname = path.stem.split('_cropped')[0] + '_cropped'
+    
+    mask = io.imread(msk_path, as_gray=True)
+
+    # dilate & erode ------------------------------------------------------------
+    iterations = 1
+    ksize = (3, 3)
+    kernel_ELLIPSE = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, ksize=ksize)
+    mask = cv2.dilate((mask), kernel_ELLIPSE, iterations=iterations)
+    mask  = cv2.erode(mask, kernel_ELLIPSE, iterations=(iterations-1))
+    # ----------------------------------------------------------------------------
+
+    # smooth ------------------------------------------------------------
+    # mask_pil = Image.open(msk_path)
+    # mask_smooth = mask_pil.filter(ImageFilter.ModeFilter(size=3))
+    # mask = np.array(mask_smooth)
+    # img_mask_name = path.stem + '_smooth' + '.png'
+    # mask_smooth.save(dir_save.joinpath(img_mask_name+ '_smooth' +'.png'))
+    # ----------------------------------------------------------------------------
+
+    ## save mask
+    img_mask_name = path.stem + '_dilate' + '.png'
+    save_path_mask = dir_save.joinpath(img_mask_name)
+    io.imsave(save_path_mask, mask)
+
+    print(idx, img_mask_name, 'saved')
+
+    ## loading original img by img_name
+    # img_path = dir_origin.joinpath(fname + '.png')
+    # origin_img = io.imread(img_path)
+    ## save image
+    # io.imsave(dir_save.joinpath(fname + '.png'), origin_img)
+    # print(idx, fname, 'saved')
+
+
+# ============================================================================================
+# convert masks rgb(w,h,c)  to grey(w,h)
+# ============================================================================================
+
+
+dir_mask = Path('data\label_waiting_postprocess\mask_211101')
+
+dir_mask_tmp = dir_mask.joinpath('masks_tmp')
+dir_mask_tmp.mkdir(parents=True, exist_ok=True)
+
+for i, path in enumerate(dir_mask.glob('*.png')):
+    mask_name = path.stem.split('_mask')[0]
+    mask_ = io.imread(path, as_gray=True)  # (h,w) uint8
+
+    if not mask_.dtype == 'uint8':
+        mask_ = (mask_*255).astype(np.uint8)
+
+    mask_bi = np.where(mask_ > 128, 255, 0).astype('uint8')
+    save_path = dir_mask_tmp.joinpath(mask_name + '.png')
+    io.imsave(save_path, mask_bi)
+    print(i, mask_name, 'saved' )
+
+dir_img = dir_mask.joinpath('imgs')
+dir_img.mkdir(exist_ok=True, parents=True)
+
+# ## prepare dir_img by  dir_mask
+dir_ori = Path('../crop/origin/')
+for i, path in enumerate(dir_mask.iterdir()):
+    if not path.name.endswith('.png'):
+        continue
+    img_name = path.stem
+    origin_file = dir_ori.joinpath(img_name + '.png')
+    img = io.imread(origin_file)
+    save_path = dir_img.joinpath(img_name  + '.png')
+    io.imsave(save_path, img)
+    print(i, img_name, 'saved' )
+
