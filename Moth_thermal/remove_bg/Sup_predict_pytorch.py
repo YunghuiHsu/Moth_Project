@@ -2,6 +2,7 @@ import argparse
 import logging
 import os
 from pathlib import Path
+from datetime import datetime
 from matplotlib.pyplot import axis
 
 import numpy as np
@@ -22,7 +23,7 @@ from utils.utils import plot_img_and_mask, plt_result
 def get_args():
     parser = argparse.ArgumentParser(
         description='Predict masks from input images')
-    parser.add_argument('--model', '-m', default='MODEL.pth', metavar='FILE',
+    parser.add_argument('--model', '-m', default='model/Unet_rmbg/checkpoint.pth', metavar='FILE',
                         help='Specify the file in which the model is stored')
     parser.add_argument('--input', '-i', metavar='INPUT', nargs='+',
                         help='Filenames of input images', required=True)
@@ -37,8 +38,8 @@ def get_args():
     parser.add_argument('--scale', '-s', type=float, default=1.0,
                         help='Scale factor for the input images')
     parser.add_argument('--gpu', '-g', dest='gpu', default='0')
-    # parser.add_argument('--mask_suffix', '-suffix', type=str, default='_MaskUnet',
-    #                     help='suffix name of mask predicted')
+    parser.add_argument('--mask_suffix', '-suffix', type=str, default='_MaskUnet',
+                        help='suffix name of mask predicted')
     return parser.parse_args()
 
 # ===================================================================================
@@ -99,11 +100,15 @@ def mask_to_image(mask: np.ndarray):
 
 
 if __name__ == '__main__':
+    time_ = datetime.now().strftime("%y%m%d_%H%M")
     args = get_args()
     in_files = args.input
 
     # mkdir
-    model_dir = Path(args.model).parent
+    submodel_path = Path(in_files[0]).parent
+    submodel_dir = os.path.split(submodel_path)[-1]
+    model_dir = Path(args.model).parent.joinpath(time_ + '_' + submodel_dir)
+    model_dir.mkdir(parents=True, exist_ok=True)
     save_to_check = model_dir.joinpath('Predict_checking')
     save_to_check.mkdir(exist_ok=True)
     save_to_mask = model_dir.joinpath('Predict_mask')
@@ -126,7 +131,7 @@ if __name__ == '__main__':
         logging.info(f'\t{idx:4d}, Predicting image {filename} ...')
 
         # img_pil = Image.open(filename)
-        print(f'{idx:4f} loading {filename}')
+        print(f'{idx:4d} loading {filename}')
         img_ndarray = io.imread(filename)
         img_pil = Image.fromarray(img_ndarray)
 
@@ -138,6 +143,7 @@ if __name__ == '__main__':
         # print('mask.shape: ', mask.shape) # (2, 256, 256), [0, 255], uint8
 
         if not args.no_save:
+
             # out_filename = out_files[i]
             fname = Path(filename).stem
             logging.info(f'Mask saved to {fname}')
@@ -153,7 +159,7 @@ if __name__ == '__main__':
             norm_mask = (m_mask-m_mask.min()) / (m_mask.max() -
                                                  m_mask.min())  # (h ,w, 3), [0,1], flaot64
             norm_mask3 = np.stack(
-                [norm_mask, norm_mask, norm_mask], axis=2)   # (h ,w, 3)
+                [norm_mask]*3, axis=2)   # (h ,w, 3)
             # transform mask to black(0) / white(1) depends on threshold
             # (h ,w, 3), [0/1], flaot64
             bin_mask3 = np.where(norm_mask3 > 0.5, 1.0, 0.0)
@@ -171,7 +177,8 @@ if __name__ == '__main__':
             img_list = [ori_img, bin_mask3, img_rmbg]
             title_list = ['Original image', 'U-Net mask', 'img_rmbg']
             fig = plt_result(img_list, title_list)
-            path_fig_save = save_to_check.joinpath(fname + '__checking_Unet.jpg')
+            path_fig_save = save_to_check.joinpath(
+                fname + '__checking_Unet.jpg')
             fig.savefig(path_fig_save, dpi=100, bbox_inches='tight')
 
             # save mask
@@ -183,7 +190,8 @@ if __name__ == '__main__':
             # save img_rmbg
             # (h, w, c). [0,1] float64 > [0,255], uint8
             img_rmbg_uint8 = (img_rmbg*255).astype('uint8')
-            path_img_rmbg_save = save_to_rmbg.joinpath(fname + '_rmbg_Unet.png')
+            path_img_rmbg_save = save_to_rmbg.joinpath(
+                fname + '_rmbg_Unet.png')
             io.imsave(path_img_rmbg_save, img_rmbg_uint8)
 
             print(f'{idx:4d} pred_mask of {fname} saved')
