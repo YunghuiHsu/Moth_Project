@@ -65,7 +65,7 @@ save_dir.mkdir(exist_ok=True, parents=True)
 # '._'為隱藏檔
 image_pathes_ = [path for path in data_dir.glob('**/*.jpg')
                  if not path.stem.startswith('._') and path.suffix == '.jpg']
-print(len(image_pathes_))
+print('Number of imgs :　', len(image_pathes_))
 
 # image_SJTT_pathes = [path for path in image_pathes_ if (
 #     "重複或problem" not in path) and ("SJTT" in path)]  # 排除"重複或problem"資料夾內的路徑
@@ -140,7 +140,7 @@ for idx, path in enumerate(image_pathes_[s:]):
     resize = args.width, round(h*args.width/w)
 
     img_resize = cv2.resize(img, resize, interpolation=cv2.INTER_AREA)
-    path_save = save_dir.joinpath(name + '.png')
+    path_save = save_dir.joinpath(name + args.img_type)
     io.imsave(path_save, img_resize)
     time_passed = time.time()-start_time
 
