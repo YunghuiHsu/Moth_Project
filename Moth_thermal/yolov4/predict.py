@@ -5,34 +5,93 @@ predict.py有几个注意点
 3、如果想要获得框的坐标，可以进入detect_image函数，读取top,left,bottom,right这四个值。
 4、如果想要截取下目标，可以利用获取到的top,left,bottom,right这四个值在原图上利用矩阵的方式进行截取。
 '''
+import pandas as pd
 from PIL import Image
+from skimage import io
 from yolo import YOLO
 import os
+import glob
+import time
+import argparse
+
+
+# ===============================================================================================
+parser = argparse.ArgumentParser(
+    description='predict bounding box by yolo'
+)
+parser.add_argument("--file", default='SJRS',
+                    type=str, help='"CATT", "CARS" or "SJTT", "SJRS" or "SJRS_halfcropped", "CARS_halfcropped"')
+parser.add_argument("--data_root", '-d', default='../data',
+                    type=str, help='where the data directory store')
+
+args = parser.parse_args()
+
+# ===============================================================================================
 
 yolo = YOLO()
 
-basedir = '/data/moth/data/downloaded_with_gbif/vott_flat_images_project20210322/vott_flat_images/'
-files_ = os.listdir(basedir)
-len(files_)
+file = args.file
+data_root = args.data_root
+
+if file.endswith("RS"):
+    basedir = f'{data_root}/data_raw/{file}/'
+elif file.endswith("TT"):
+    basedir = f'{data_root}/data_resize/{file}/'
+elif file.endswith("halfcropped"):
+    basedir = f'{data_root}/data_resize_cropped/{file}/'
+
+files_ = [path for path in glob.glob(f'{basedir}**/*', recursive=True)
+          if os.path.splitext(path)[1].lower() in ['.jpg', '.jpeg', '.png']]  # path.split('.')[-1]
+print(f'Prepare data :　{basedir}')
+print('data size : ', len(files_))
+
+# ----------------------------------------------------------------------------------------------
+# 處理切半的資料: "*_halfcropped"
+# ----------------------------------------------------------------------------------------------
+# if file.endswith("halfcropped"):
+#     path = f'{data_root}/data_resize_cropped/{file}_specimen.txt'
+#     files_halfcrop = []
+#     with open(path) as f:
+#         for line in f.readlines():
+#             path = basedir + line.strip('\n')+'.jpg'
+#             files_halfcrop.append(path)
+#     files_halfcrop
+#     print('data size for files_halfcrop: ', len(files_halfcrop))
+#     files_ = files_halfcrop
+# ---------------------------------------------------------------------------------------------
+
+save_dir = f'{data_root}/data_resize_cropped/yolo_crop/{file}'
+if not os.path.exists(f'{save_dir}/cropped'):
+    os.makedirs(f'{save_dir}/cropped')
+print(f'save_dir :　{save_dir}')
 
 files = []
 bboxes_strs = []
-for f in files_:
-    if not f.lower().endswith('.jpg'):
-        continue
-    fpath = basedir + f
+start_time = time.time()
+for index, fpath in enumerate(files_):
 
-    image = Image.open(fpath)
+    # fpath = basedir + f
+    f = fpath.split('/')[-1]
+
+    img = io.imread(fpath)          # 採用skimage讀入純陣列資料格式，避免讀取到EXIF資訊
+    image = Image.fromarray(img)
+    # image = Image.open(fpath)
     preview, cropped_imgs, bboxes_str = yolo.detect_image(image)
     preview.thumbnail((256, 256))
-    preview.save('./predicts640wHalfPenalty/%s' % f)
+    # preview.save('./predicts640wHalfPenalty/%s' % f)
+    preview.save(f'{save_dir}/{f}')
 
     for idx_, cim in enumerate(cropped_imgs):
         cim.thumbnail((256, 256))
-        cim.save('./predicts640wHalfPenalty/cropped/%s_%d.jpg' % ('.'.join(f.split('.')[:-1]), idx_))
+        # cim.save('./predicts640wHalfPenalty/cropped/%s_%d.jpg' % ('.'.join(f.split('.')[:-1]), idx_))
+        cim.save(
+            f"{save_dir}/cropped/{'.'.join(f.split('.')[:-1])}_{idx_}.jpg")
 
     files.append(fpath)
     bboxes_strs.append(bboxes_str)
+    time_passed = time.time()-start_time
+    print(f"i: {index:4d}, {100*(index)/len(files_):.2f}% \
+        | Time : {time_passed//60:.0f}m, {time_passed%60:.0f}s | {fpath:<s}   ", end="\r")
 
-import pandas as pd
-pd.DataFrame({'file':files, 'bboxes':bboxes_strs}).to_csv('moth_all_bboxes.csv', sep='\t')
+pd.DataFrame({'file': files, 'bboxes': bboxes_strs}
+             ).to_csv(f'moth_all_bboxes_{file}.csv', sep=',')
