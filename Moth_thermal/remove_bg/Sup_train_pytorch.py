@@ -24,7 +24,7 @@ from utils.data_loading_moth import MothDataset
 from utils.dice_score import dice_loss
 from evaluate import evaluate
 from unet import UNet
-from utils.utils import early_stop, plt_learning_curve, get_data_attribute, get_masks_contour
+from utils.utils import early_stop, plt_learning_curve, get_masks_contour
 
 
 # =======================================================================================================
@@ -38,11 +38,11 @@ parser.add_argument("--save_epoch", '-save_e', type=int,
                     default=1, help="save checkpoint per epoch")
 
 # data
-parser.add_argument('--XX_DIR', dest='XX_DIR',
-                    default='data/data_for_Sup_train/imgs/')
-parser.add_argument('--YY_DIR', dest='YY_DIR',
-                    default='data/data_for_Sup_train/masks/')
-parser.add_argument('--SAVEDIR', dest='SAVEDIR',
+parser.add_argument('--XX_DIR', dest='XX_DIR', type=str,
+                    default='../data/data_for_Sup_train/imgs/')
+parser.add_argument('--YY_DIR', dest='YY_DIR', type=str,
+                    default='../data/data_for_Sup_train/masks_211105/')
+parser.add_argument('--SAVEDIR', dest='SAVEDIR', type=str,
                     default='model/Unet_rmbg')  # Unet_rmbg
 
 parser.add_argument('--image_input_size', '-s_in', dest='size_in',
@@ -53,6 +53,8 @@ parser.add_argument('--image_channel', '-c', dest='image_channel',
                     metavar='Channel', default=3, type=int, help='channel of image input')
 parser.add_argument('--img_type', '-t', dest='img_type',
                     metavar='TYPE', type=str, default='.png', help='image type: .png, .jpg ...')
+parser.add_argument('--stratify_off',  action='store_true',
+                    default=False, help='whether to stratified sampling')
 
 # model
 parser.add_argument('--epochs', '-e', metavar='E',
@@ -67,6 +69,11 @@ parser.add_argument('--validation', '-v', dest='val', type=float, default=10.0,
                     help='Percent of the data that is used as validation (0-100)')
 parser.add_argument('--amp', action='store_true',
                     default=False, help='Use mixed precision')
+parser.add_argument('--contour_weight', '-w', dest='contour_weight',
+                    metavar='Contour_Weight', type=int, default=3, help='loss weight for contour area')
+parser.add_argument('--loss_metric', '-m', dest='loss_metric',
+                    metavar='Metric', type=str, default='max',
+                    help="Loss fuction goal: maximize Dice score > 'max' / minimize Valid Loss > 'min'")
 
 
 # return parser.parse_args()
@@ -91,37 +98,6 @@ dir_checkpoint = Path(f'{args.SAVEDIR}/{time_}')
 # dir_checkpoint = Path(f'./checkpoints/{time_}')
 dir_checkpoint.mkdir(parents=True, exist_ok=True)
 
-dir_benchmarks = Path('./data/data_for_Sup_train/benchmarks/')
-
-# ----------------------------------------------------------------------------
-# convert masks rgb(w,h,c)  to grey(w,h)
-# dir_mask = Path('data/label_waiting_postprocess/mask_selected')
-
-# dir_mask_tmp = Path('./data/data_for_Sup_train/masks_tmp')
-# dir_mask_tmp.mkdir(parents=True, exist_ok=True)
-
-# for i, path in enumerate(dir_mask.glob('*.png')):
-#     mask_name = path.stem.split('_mask')[0]
-#     mask_ = io.imread(path, as_gray=True)  # (h,w) uint8
-#     mask_int8 = (mask_*255).astype(np.uint8)
-#     mask_bi = np.where(mask_int8 == 0, 0, 255).astype('uint8')
-#     save_path = dir_mask_tmp.joinpath(mask_name + '.png')
-#     io.imsave(save_path, mask_bi)
-#     print(i, mask_name, 'saved' )
-
-
-# ## prepare dir_img by  dir_mask
-# dir_ori = Path('../crop/origin/')
-# for i, path in enumerate(dir_mask.iterdir()):
-#     if not path.name.endswith('.png'):
-#         continue
-#     img_name = path.stem
-#     origin_file = dir_ori.joinpath(img_name + '.png')
-#     img = io.imread(origin_file)
-#     save_path = dir_img.joinpath(img_name  + '.png')
-#     io.imsave(save_path, img)
-#     print(i, img_name, 'saved' )
-# # ----------------------------------------------------------------------------
 
 # ------------------------------------------------------
 # for test
@@ -145,22 +121,29 @@ def train_net(net,
               input_size: tuple = (256, 256),
               output_size: tuple = (256, 256),
               img_type: str = '.png',
-              amp: bool = False
+              amp: bool = False,
+              metric: str = 'max',
+              contour_weight: int = 3
               ):
 
     # Prepare dataset, Split into train / validation partitions
-    img_paths = list(dir_img.glob('*' + img_type))
-    mask_paths = list(dir_mask.glob('*' + img_type))
+    img_paths = list(dir_img.glob('**/*' + img_type))
+    mask_paths = list(dir_mask.glob('**/*' + img_type))
 
     assert len(img_paths) == len(
         mask_paths), f'number imgs: {len(img_paths)} and masks: {len(mask_paths)} need equal '
 
-    df = get_data_attribute(img_paths)
-    assert len(df.Source_Family) == len(
-        img_paths), f'number of imgs: {len(img_paths)} and data_attribute.csv: {len(df.Source_Family)} need equal '
+    if not args.stratify_off:
+        df = pd.read_csv('imgs_label_byHSV.csv', index_col=0)
+        assert len(df.Name) == len(
+            img_paths), f'number of imgs: {len(img_paths)} and imgs_label_byHSV.csv: {len(df.label)} need equal '
+        print(
+            f'Stratified sampling by "imgs_label_byHSV.csv", clustering: {np.unique(df.label).size}')
 
     X_train, X_valid, y_train, y_valid = train_test_split(
-        img_paths, mask_paths, test_size=val_percent, random_state=1, stratify=df.Source_Family)
+        img_paths, mask_paths, test_size=val_percent, random_state=1,
+        stratify=df.label if not args.stratify_off else None)
+
     train_set = MothDataset(
         X_train, y_train, input_size=input_size, output_size=output_size, img_aug=True)
     val_set = MothDataset(
@@ -198,7 +181,7 @@ def train_net(net,
     # optimizer =  optim.AdamW(net.parameters(), lr=learning_rate, weight_decay=1e-2)
     optimizer = optim.Adam(net.parameters(), lr=learning_rate)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, 'max', patience=20)  # goal: maximize Dice score > 'max' / minimize Valid Loss > 'min'
+        optimizer, metric, patience=20)  # goal: maximize Dice score > 'max' / minimize Valid Loss > 'min'
 
     # grad_scaler = torch.cuda.amp.GradScaler(enabled=amp)
     criterion = nn.CrossEntropyLoss()
@@ -223,7 +206,7 @@ def train_net(net,
     best_dice_init = 0
     patience = 50
     trigger_times = 0
-    metric = 'max'
+    metric = metric
     warmup_epochs = 30
     start_time = time.time()
     for epoch in range(epochs):
@@ -232,16 +215,17 @@ def train_net(net,
 
         # ------------------------------------------------------------------------------------------
         # learning rate warmup(optional)
-        # if epoch < warmup_epochs:
-        #     warmup_percent_done = epoch/warmup_epochs
-        #     warmup_learning_rate = args.lr * \
-        #         (1e-5 + 0.1*(1 - 1e-5)*warmup_percent_done)  # gradual warmup_lr
-        #     optimizer = optim.AdamW(net.parameters(), lr=warmup_learning_rate)
-        # elif epoch == warmup_epochs:
-        #     optimizer = optim.AdamW(
-        #         net.parameters(), lr=args.lr, weight_decay=1e-3)
-        #     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        #         optimizer, 'max', patience=20)
+        if epoch < warmup_epochs:
+            warmup_percent_done = epoch/warmup_epochs
+            # gradual warmup_lr
+            warmup_learning_rate = args.lr ** (1 /
+                                               (warmup_percent_done + 1e-10))
+            optimizer = optim.AdamW(net.parameters(), lr=warmup_learning_rate)
+        elif epoch == warmup_epochs:
+            optimizer = optim.AdamW(
+                net.parameters(), lr=args.lr, weight_decay=1e-3)
+            scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+                optimizer, metric, patience=20)
         # ------------------------------------------------------------------------------------------
 
         with tqdm(total=n_train, desc=f'Epoch {epoch + 1}/{epochs}', unit='img') as pbar:
@@ -269,12 +253,13 @@ def train_net(net,
                 # -----------------------------------------------------------------------------------
                 # get mask_contour and weight it for loss calculation (optional)
                 # -----------------------------------------------------------------------------------
+
                 masks_contour = get_masks_contour(
                     masks_true.cpu().numpy().astype(np.uint8)).to(device)  # (b, h, w), torch.int64, [0, 1]
-                weight_CrossEntropy = 5
+
                 y = torch.ones(1, dtype=torch.int64).to(device)
                 masks_weighted = torch.where(
-                    masks_contour == 1, weight_CrossEntropy*y, y)  # (b, h, w)
+                    masks_contour == 1, contour_weight*y, y)  # (b, h, w)
 
                 # caculate weighted loss based on countour
                 masks_pred_one_hot = F.softmax(
@@ -295,7 +280,7 @@ def train_net(net,
                     masks_contour_pred_one_hot, masks_contour_true_one_hot, multiclass=True)
 
                 train_loss_contour_weighted = cross_entrophy_weighted + \
-                    dice_loss_allArea + dice_loss_contour*5
+                    dice_loss_allArea + dice_loss_contour*contour_weight
 
                 # --------------------------------------------------------------------------------------------
 
@@ -496,7 +481,9 @@ if __name__ == '__main__':
                   output_size=output_size,
                   val_percent=args.val / 100,
                   img_type=args.img_type,
-                  amp=args.amp
+                  amp=args.amp,
+                  metric=args.loss_metric,
+                  contour_weight=args.contour_weight
                   )
         save_log()
     except KeyboardInterrupt:
