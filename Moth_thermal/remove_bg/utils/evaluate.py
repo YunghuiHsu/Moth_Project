@@ -4,7 +4,7 @@ import torch.nn as nn
 from tqdm import tqdm
 import numpy as np
 
-from dice_score import multiclass_dice_coeff, dice_coeff, dice_loss
+from utils.dice_score import multiclass_dice_coeff, dice_coeff, dice_loss
 
 criterion = nn.CrossEntropyLoss()
 
