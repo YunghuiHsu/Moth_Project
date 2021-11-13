@@ -320,7 +320,7 @@ for i, path in enumerate(dir_mask.glob('*.png')):
 dir_img = dir_mask.joinpath('imgs')
 dir_img.mkdir(exist_ok=True, parents=True)
 
-# ## prepare dir_img by  dir_mask
+# ## prepare dir_img by dir_mask
 dir_ori = Path('../data/data_resize_cropped/origin/')
 for i, path in enumerate(dir_mask.iterdir()):
     if not path.name.endswith('.png'):
@@ -331,3 +331,22 @@ for i, path in enumerate(dir_mask.iterdir()):
     save_path = dir_img.joinpath(img_name + '.png')
     io.imsave(save_path, img)
     print(i, img_name, 'saved')
+
+# ============================================================================================
+# get masks by img from dir_mask
+# ============================================================================================
+# images must in  'data/data_for_Sup_train/imgs'
+
+root = Path('../data/data_for_Sup_train')
+dir_mask = root.joinpath('masks_211105')
+dir_imgs_batch_arg = root.joinpath('imgs_batch_arg')
+
+dir_masks_batch_arg = root.joinpath('masks_batch_arg')
+dir_masks_batch_arg.mkdir(exist_ok=True, parents=True)
+
+for path in dir_imgs_batch_arg.iterdir():
+    name = path.stem
+    path_mask = dir_mask.joinpath(name + '.png')
+    mask = io.imread(path_mask)
+    io.imsave(dir_masks_batch_arg.joinpath(name + '.png'), mask)
+    print(f'{name}.png saved')
