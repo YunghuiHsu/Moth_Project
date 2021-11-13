@@ -12,6 +12,7 @@ import skimage.io as io
 from skimage import color
 from sklearn.cluster import KMeans, Birch
 from sklearn import metrics
+from sklearn.preprocessing import StandardScaler
 import umap
 from sklearn.decomposition import PCA
 
@@ -103,7 +104,7 @@ moth_hsv = dict()
 print(f'Samplimg HSV on Wings')
 for idx, path in enumerate(pathes_imgs):
     # if idx % 3 == 0:
-    name = path.stem.split('_cropped')[0]
+    name = path.stem.split('_cropped')[0] + '_cropped'
     img = io.imread(path)
 
     wing_sample_hsv = dict()
@@ -124,7 +125,7 @@ for column in df.columns.values[1:]:
     df_split = pd.DataFrame(df[column].tolist(), columns=[
                             f'{column}_h', f'{column}_s', f'{column}_v'])
     df_new = pd.concat([df_new, df_split], axis=1)
-df_new.to_csv(f'imgs_{len(pathes_imgs)}_hsv.csv')
+# df_new.to_csv(f'imgs_{len(pathes_imgs)}_hsv.csv')
 
 # ====================================================================================================
 # Clustering moth specimen images depends HSV values
@@ -132,9 +133,11 @@ df_new.to_csv(f'imgs_{len(pathes_imgs)}_hsv.csv')
 
 # Decomposition
 print('\nStart Decomposition')
-df_new = pd.read_csv(f'imgs_{len(pathes_imgs)}_hsv.csv', index_col=0)
+# df_new = pd.read_csv(f'imgs_{len(pathes_imgs)}_hsv.csv', index_col=0)
 
 X = df_new.iloc[:, 1:]
+Z = StandardScaler().fit_transform(X)    # Normalization,  u=0, std=1
+
 Y = df_new.iloc[:, 0]
 
 # pca = PCA(n_components=3)
@@ -144,9 +147,10 @@ Y = df_new.iloc[:, 0]
 # ratio = pca.explained_variance_ratio_
 # pd.DataFrame(ratio).cumsum().plot()
 # plt.savefig('tmp/ratio.jpg')
-n_neighbors = int(len(pathes_imgs)*0.05)
-dimension_reductor = umap.UMAP(n_components=3, n_neighbors=n_neighbors, random_state=42)
-embedding = dimension_reductor.fit_transform(X)
+n_neighbors = int(len(pathes_imgs)*0.1)
+dimension_reductor = umap.UMAP(
+    n_components=3, n_neighbors=n_neighbors, random_state=42)
+embedding = dimension_reductor.fit_transform(Z)
 
 # ------------------------------------------------------------------------------------------------------
 # Clustering performance evaluation
@@ -156,7 +160,7 @@ print('\nClustering performance evaluation')
 dir_save = Path('tmp/cluster_test')
 dir_save.mkdir(exist_ok=True, parents=True)
 
-n_cluster = range(2,21)
+n_cluster = range(2, 21)
 
 sil_scores = []
 cal_scores = []
@@ -164,7 +168,7 @@ dav_scores = []
 for c in n_cluster:
     cls = Birch(n_clusters=c)
     labels = cls.fit_predict(embedding)
-    
+
     sil_score = metrics.silhouette_score(embedding, labels, metric='euclidean')
     sil_scores.append(sil_score)
     cal_score = metrics.calinski_harabasz_score(embedding, labels)
@@ -173,23 +177,27 @@ for c in n_cluster:
     dav_scores.append(dav_score)
 
 
-def normalize(scores : np.array) -> np.array:
+def normalize(scores: np.array) -> np.array:
+    # 0 - 1
     z = (np.array(scores) - np.min(scores)) / (np.max(scores) - np.min(scores))
     return z
 
-weighted_scores = (normalize(sil_scores) + normalize(cal_scores) + normalize(-np.array(dav_scores))) /3
 
-metrics_ = ['Silhouette_score', 'Calinski_harabasz_score', 'Davies_bouldin_score', 'Weighted_score']
+weighted_scores = (normalize(sil_scores) +
+                   normalize(cal_scores) + normalize(-np.array(dav_scores))) / 3
+
+metrics_ = ['Silhouette_score', 'Calinski_harabasz_score',
+            'Davies_bouldin_score', 'Weighted_score']
 scores = [sil_scores, cal_scores, dav_scores, weighted_scores]
-for metric, score in zip(metrics_,scores):
+for metric, score in zip(metrics_, scores):
     pd.DataFrame(score, index=n_cluster, columns=[metric]).plot()
     plt.savefig(dir_save.joinpath(f'Birch_cluster_{metric}.jpg'))
     plt.close()
     print(f'\t{str(dir_save.joinpath(f"Birch_cluster_{metric}.jpg"))} saved')
 
-weighted_scores[:3]= 0  # cluster must > 3
+weighted_scores[:3] = 0  # cluster must > 3
 idx_ = np.argmax(weighted_scores)
-best_n_cluster =  n_cluster[idx_]
+best_n_cluster = n_cluster[idx_]
 
 print(f'\tGet the best clusting number : {best_n_cluster}')
 
@@ -244,55 +252,55 @@ fig.update_layout(margin=dict(l=0, r=0, b=0, t=0))
 fig.write_html(dir_save.joinpath('clusters_3d.html'))
 print(f'\n{str(dir_save.joinpath("clusters_3d.html"))} saved')
 
-# # plotting Thumbnail of imgs by clustering
-# print('\nPlotting Thumbnail of imgs by clustering')
-# index_id = {}
-# for id in df_label.label.unique():
-#     indexes = df_label[df_label.label == id].index.values
-#     index_id[id] = indexes
+# plotting Thumbnail of imgs by clustering
+print('\nPlotting Thumbnail of imgs by clustering')
+
+index_id = {}
+for id in df_label.label.unique():
+    indexes = df_label[df_label.label == id].index.values
+    index_id[id] = indexes
 
 
-# def plot_imgs_cluster(imgs: np.array, id: int, index: list, df_label: pd.DataFrame):
-#     ncols = 12
-#     nrows = math.ceil(len(index)/ncols)
-#     fig, axes = plt.subplots(nrows=nrows, ncols=ncols,
-#                              figsize=(16, 16*nrows/ncols))
-#     title = f"Cluster_{id}"
-#     fig.suptitle(title, fontsize=int(24*nrows/ncols), y=0.92)
-#     for i, ax in enumerate(axes.flatten()):
-#         ax.set_axis_off()
-#         if i < len(index):
-#             # ax.set_title(f"cluster : {list(cluster_index.keys())[i]}")
-#             ax.imshow(imgs[i])
-#         else:
-#             continue
-#     fig.savefig(dir_save.joinpath(
-#         f'Birch_cluster{id}_{len(index)}.jpg'), bbox_inches="tight")
-#     plt.close()
+def plot_imgs_cluster(imgs: np.array, id: int, index: list, df_label: pd.DataFrame):
+    ncols = 12
+    nrows = math.ceil(len(index)/ncols)
+    fig, axes = plt.subplots(nrows=nrows, ncols=ncols,
+                             figsize=(16, 16*nrows/ncols))
+    title = f"Cluster_{id}"
+    fig.suptitle(title, fontsize=int(24*nrows/ncols), y=0.92)
+    for i, ax in enumerate(axes.flatten()):
+        ax.set_axis_off()
+        if i < len(index):
+            # ax.set_title(f"cluster : {list(cluster_index.keys())[i]}")
+            ax.imshow(imgs[i])
+        else:
+            continue
+    fig.savefig(dir_save.joinpath(
+        f'Birch_cluster{id}_{len(index)}.jpg'), bbox_inches="tight")
+    plt.close()
 
-#     print(f'\t{str(dir_save.joinpath(f"cluster{id}_{len(index)}.jpg"))} saved')
-
-
-# for id, index in index_id.items():
-#     print(f'\tClustering id : {id}, size : {len(index)}')
-#     imgs = []
-#     for idx in index:
-#         name = df_label.Name[idx]
-#         path = dir_imgs.joinpath(name + '_cropped.png')
-#         img = io.imread(path)
-#         imgs.append(img)
-#     imgs_numpy = np.asarray(imgs)
-#     plot_imgs_cluster(imgs=imgs_numpy, id=id, index=index, df_label=df_label)
+    print(f'\t{str(dir_save.joinpath(f"cluster{id}_{len(index)}.jpg"))} saved')
 
 
-# for id in np.unique(cls_ids):
-#     dir_save.joinpath(str(id)).mkdir(exist_ok=True, parents=True)
+for id, index in index_id.items():
+    print(f'\tClustering id : {id}, size : {len(index)}')
+    imgs = []
+    for idx in index:
+        name = df_label.Name[idx]
+        path = dir_imgs.joinpath(name + '.png')
+        img = io.imread(path)
+        imgs.append(img)
+    imgs_numpy = np.asarray(imgs)
+    plot_imgs_cluster(imgs=imgs_numpy, id=id, index=index, df_label=df_label)
 
-# for idx, path in enumerate(pathes_imgs):
-#     name = path.stem
-#     print(idx, name, end='\t\t\r')
-#     cls_id = cls_ids[idx]
+# get imgs by cld_id
+for id in np.unique(cls_ids):
+    dir_save.joinpath(str(id)).mkdir(exist_ok=True, parents=True)
 
-#     shutil.copyfile(dir_imgs.joinpath(name + '.png'),
-#                     dir_save.joinpath(str(cls_id), name + '.jpg'))
-
+for idx, path in enumerate(pathes_imgs):
+    name = path.stem
+    print(idx, name, end='\t\t\r')
+    cls_id = cls_ids[idx]
+    # if cls_id == 1 or cls_id == 2:
+    shutil.copyfile(dir_imgs.joinpath(name + '.png'),
+                    dir_save.joinpath(str(cls_id), name + '.png'))

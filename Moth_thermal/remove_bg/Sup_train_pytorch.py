@@ -1,6 +1,5 @@
 import argparse
 import logging
-import pathlib
 import sys
 import os
 import time
@@ -14,6 +13,7 @@ import skimage.io as io
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torchvision.utils as vutils
 import wandb
 from torch import optim
 from torch.utils.data import DataLoader, random_split
@@ -22,9 +22,10 @@ from tqdm import tqdm
 
 from utils.data_loading_moth import MothDataset
 from utils.dice_score import dice_loss
-from evaluate import evaluate
+from utils.evaluate import evaluate
 from unet import UNet
 from utils.utils import early_stop, plt_learning_curve, get_masks_contour
+from utils.sampler_moth import AddBatchAugmentSampler, NonBatchAugmentSampler
 
 
 # =======================================================================================================
@@ -93,6 +94,14 @@ output_size = size_str_tuple(args.size_out)
 dir_img = Path(args.XX_DIR)
 dir_mask = Path(args.YY_DIR)
 
+# ------------------------------------------------------
+# AddBatchArgmentation
+dir_img_arg = Path('../data/data_for_Sup_train/imgs_batch_arg')
+img_arg_paths = list(dir_img_arg.glob('**/*' + 'png'))
+dir_img_arg = Path('../data/data_for_Sup_train/masks_batch_arg')
+masks_arg_paths = list(dir_img_arg.glob('**/*' + 'png'))
+# ------------------------------------------------------
+
 time_ = datetime.now().strftime("%y%m%d_%H%M")
 dir_checkpoint = Path(f'{args.SAVEDIR}/{time_}')
 # dir_checkpoint = Path(f'./checkpoints/{time_}')
@@ -153,13 +162,34 @@ def train_net(net,
     n_train = len(train_set)
 
     # Create data loaders
-    loader_args = dict(batch_size=batch_size, num_workers=2, pin_memory=True)
+    loader_args = dict(batch_size=batch_size, num_workers=2,
+                       pin_memory=True, drop_last=True)
     train_loader = DataLoader(train_set, shuffle=True, **loader_args)
-    val_loader = DataLoader(val_set, shuffle=False,
-                            drop_last=True, **loader_args)
+    val_loader = DataLoader(val_set, shuffle=False, **loader_args)
+
+    # ------------------------------------------------------
+    # AddBatchArgmentation
+    X_train_arg = X_train + img_arg_paths
+    y_train_arg = y_train + masks_arg_paths
+    size_X_train = len(X_train)
+
+    batchsampler = AddBatchAugmentSampler(
+        X_train_arg, size_X_train, batch_size)
+    # batchsampler = NonBatchAugmentSampler(X_train_arg, size_X_train, batch_size)
+
+    train_set = MothDataset(
+        X_train_arg, y_train_arg, input_size=input_size, output_size=output_size, img_aug=True)
+    train_loader = DataLoader(
+        train_set, batch_sampler=batchsampler, num_workers=2, pin_memory=True)
+
+    dir_save = Path('tmp/AddBatchAugment') if isinstance(batchsampler,
+                                                         AddBatchAugmentSampler) else Path('tmp/NonBatchAugment')
+    dir_save.mkdir(exist_ok=True, parents=True)
+    # ------------------------------------------------------
 
     # (Initialize logging)
-    experiment = wandb.init(project='U-Net', resume='allow', anonymous='must')
+    experiment = wandb.init(project='U-Net_MothThermal_AddBatchArgmentationTest',
+                            resume='allow', anonymous='must')
     experiment.config.update(dict(epochs=epochs, batch_size=batch_size, learning_rate=learning_rate,
                                   val_percent=val_percent, save_checkpoint=save_checkpoint, input_size=input_size, output_size=output_size,
                                   amp=amp))
@@ -233,9 +263,20 @@ def train_net(net,
             # Train round
             # ==========================================================================================
             train_loss_collector = []
-            for batch in train_loader:
+            for idx, batch in enumerate(train_loader):
                 images = batch['image']
                 masks_true = batch['mask']
+
+                # ------------------------------------------------------
+                # AddBatchArgmentation test
+                if epoch == 0:
+                    vutils.save_image(
+                        torch.cat([images,
+                                   torch.stack([masks_true.float()]*3, dim=1)],
+                                  dim=0).data.cpu(),
+                        dir_save.joinpath(f'batch_{idx}.jpg'),
+                        nrow=8)
+                # ------------------------------------------------------
 
                 assert images.shape[1] == net.n_channels, \
                     f'Network has been defined with {net.n_channels} input channels, ' \
