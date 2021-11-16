@@ -1,8 +1,7 @@
 import os
 import sys
 from pathlib import Path
-import glob
-import time
+from datetime import datetime
 import math
 import shutil
 import numpy as np
@@ -39,93 +38,127 @@ colors = ['#000080', '#00008b', '#0000ff', '#006400', '#008000', '#008080',
 # Sample pixels on moth specimen and calculate HSV values
 # ====================================================================================================
 
-dir_imgs = Path('../data/data_for_Sup_train/imgs/')
+# dir_imgs = Path('../../data/data_for_Sup_train/imgs/')
+dir_imgs = Path('../../data/origin')
+
 pathes_imgs = list(dir_imgs.glob('*.png'))
 print(f'Number of imgs : {len(pathes_imgs)}')
 
 
+# -------------------------------------------------------------------------------------------
 # Set sample location by coordinate
 # image size: 256x256
 # center point of image : (h*0.5, w*0.5) == 128,128
 
-h, w = 255, 255
-sample_forewing = [(0.025, 0.10), (0.05, 0.15), (0.10, 0.20),
-                   (0.125, 0.25), (0.15, 0.30), (0.05, 0.30)]
-sample_backwing = [(0.025, 0.10), (0.05, 0.15), (0.10, 0.20),
-                   (0.05, 0.20), (0.10, 0.15), (0.05, 0.25)]
+w_samples = np.linspace(15, 240, 25).astype('uint8')
+h_samples = np.linspace(50, 215, 20).astype('uint8')
 
-wing_sample = dict()
-for side in ['l', 'r']:
-    for part in ['fw', 'bw']:
-        sample_ = sample_forewing if part == 'fw' else sample_backwing
-        for point in [0, 1, 2, 3, 4, 5]:
-            sample = sample_[point]
-            loc_ = f'{side}_{part}{point}'
-            if side == 'l' and part == 'fw':
-                wing_sample[loc_] = (
-                    int(h*0.5 - h * sample[0]), int(w*0.5 - w * sample[1]))
-            elif side == 'l' and part == 'bw':
-                wing_sample[loc_] = (
-                    int(h*0.5 + h * sample[0]), int(w*0.5 - w * sample[1]))
-            elif side == 'r' and part == 'fw':
-                wing_sample[loc_] = (
-                    int(h*0.5 - h * sample[0]), int(w*0.5 + w * sample[1]))
-            elif side == 'r' and part == 'bw':
-                wing_sample[loc_] = (
-                    int(h*0.5 + h * sample[0]), int(w*0.5 + w * sample[1]))
-
-# add background sample point
-wing_sample['bg_bot'] = (int(h*0.5 - h*0.40), int(w*0.5 + w*0.00))
-wing_sample['bg_top'] = (int(h*0.5 + h*0.40), int(w*0.5 + w*0.00))
+samples_grid = {}
+for x, p_x in enumerate(w_samples):
+    if p_x > 108 and p_x < 148:
+        continue
+    for y, p_y in enumerate(h_samples):
+        # if p_x > 122 and p_x <134
+        point = f'{p_x}_{p_y}'
+        # 　note:　shape of image from io.imread is (h, w). So the coordonate should be y,x
+        samples_grid[point] = p_y, p_x
+len(samples_grid)
 
 
-dir_tmp = Path('tmp/crop_test')
+dir_tmp = Path('../tmp/crop_test')
 dir_tmp.mkdir(exist_ok=True, parents=True)
 
 
-def sample_img(img: np.ndarray, wing_sample: dict, size: int = 5) -> dict:
-    # img_sample = img.copy()
-    for loc_, loc_coord in wing_sample.items():
+def sample_img(img: np.ndarray, sample_loc: dict, size: int = 3, save_crop: bool = False) -> dict:
+    if save_crop:
+        img_sample = img.copy()
+    for loc_, loc_coord in sample_loc.items():
         y, x = loc_coord
         img_crop = img[y-size:y+size, x-size:x+size]
 
         img_crop_hsv = color.rgb2hsv(img_crop)
         h, s, v = [img_crop_hsv[..., c] for c in [0, 1, 2]]
-        wing_sample_hsv[loc_] = [round(h.mean(), 5), round(
-            s.mean(), 5), round(v.mean(), 5)]
+        wing_sample_hsv[loc_] = [h.mean(), s.mean(), v.mean()]
 
-        # img_sample[y-size:y+size, x-size:x+size] = 0
-
-    # io.imsave(dir_tmp.joinpath(f'{name}_sample.jpg'), img_sample)
+        if save_crop:
+            img_sample[y-size:y+size, x-size:x+size] = 0
+    if save_crop:
+        # for check sample location
+        io.imsave(dir_tmp.joinpath(f'{name}_sample.jpg'), img_sample)
     return wing_sample_hsv
 
 
-moth_hsv = dict()
-print(f'Samplimg HSV on Wings')
-for idx, path in enumerate(pathes_imgs):
-    # if idx % 3 == 0:
-    name = path.stem.split('_cropped')[0] + '_cropped'
-    img = io.imread(path)
+# moth_hsv_ = dict()
+# print(f'Samplimg HSV by grids')
+# for idx, path in enumerate(pathes_imgs):
+#     if idx % 5 == 0:
+#         name = path.stem.split('_cropped')[0]
+#         img = io.imread(path)
+#         wing_sample_hsv = dict()
+#         wing_sample_hsv = sample_img(
+#             img, samples_grid, size=3, save_crop=False)
+#         moth_hsv_[name] = wing_sample_hsv
+#         print(f'\t{idx:04d}, {name:50s}', end='\r')
+#     # if idx == 600:
+#     #     break
 
-    wing_sample_hsv = dict()
-    wing_sample_hsv = sample_img(img, wing_sample, size=3)
-    moth_hsv[name] = wing_sample_hsv
 
-    # io.imsave(dir_tmp.joinpath(f'{name}.jpg'), img)
-    print('\t', idx, name, end='\t\t\r')
+def moth_hsv_to_df(dict_hsv: dict) -> pd.DataFrame:
+    df = (pd.DataFrame(dict_hsv).T
+          .reset_index()
+          .rename(columns={'index': 'Name'}))
+    df_new = df['Name']
+    for column in df.columns.values[1:]:
+        df_split = pd.DataFrame(df[column].tolist(), columns=[
+                                f'{column}_h', f'{column}_s', f'{column}_v'])
+        df_new = pd.concat([df_new, df_split], axis=1)
+    return df_new
 
-    # if idx == 600:
-    #     break
 
-df = (pd.DataFrame(moth_hsv).T
-      .reset_index()
-      .rename(columns={'index': 'Name'}))
-df_new = df['Name']
-for column in df.columns.values[1:]:
-    df_split = pd.DataFrame(df[column].tolist(), columns=[
-                            f'{column}_h', f'{column}_s', f'{column}_v'])
-    df_new = pd.concat([df_new, df_split], axis=1)
-# df_new.to_csv(f'imgs_{len(pathes_imgs)}_hsv.csv')
+# df_moth_hsv_ = moth_hsv_to_df(moth_hsv_)
+save_path_moth_hsv_ = f'../../data/imgs_{len(pathes_imgs)}_hsv_samples_grid.csv'
+# df_moth_hsv_.to_csv(save_path_moth_hsv_)
+
+# ---------------------------------------------------------------------------
+# filter samples_grid
+df = pd.read_csv(save_path_moth_hsv_, index_col=0)
+
+# df_std_h = df.iloc[:, 1::3].std()    # slice cols from col:1 (Hue)
+df_std_s = df.iloc[:, 2::3].std()    # slice cols from col:2 (saturation)
+# df_std_v = df.iloc[:, 3::3].std()    # slice cols from col:3 (brightness)
+df_std = df_std_s
+
+# filter grid where std(hue) less variant
+threshold = np.quantile(df_std, 0.5)
+loc_filter = df_std[df_std > threshold].index.values
+print(f'sample points from {len(samples_grid)} to {len(loc_filter)}')
+
+
+# samples_grid_filter = {}
+# for obj in loc_filter:
+#     x, y, _ = obj.split('_')
+#     samples_grid_filter[f'{x}_{y}'] = int(y), int(x)
+# # len(samples_grid_filter)
+
+# moth_hsv = dict()
+# print(f'Samplimg HSV on Wings')
+# for idx, path in enumerate(pathes_imgs):
+#     # if idx % 13 == 0:
+#     name = path.stem.split('_cropped')[0]
+#     img = io.imread(path)
+
+#     wing_sample_hsv = dict()
+#     wing_sample_hsv = sample_img(
+#         img, samples_grid_filter, size=3, save_crop=False)
+#     moth_hsv[name] = wing_sample_hsv
+
+#     print(f'\t{idx:04d}, {name:50s}', end='\r')
+#     # if idx == 600:
+#     #     break
+
+# df_new = moth_hsv_to_df(moth_hsv)
+# df_new.to_csv(
+#     f'../../data/imgs_{len(pathes_imgs)}_hsv_samples_wing.csv')
 
 # ====================================================================================================
 # Clustering moth specimen images depends HSV values
@@ -133,7 +166,8 @@ for column in df.columns.values[1:]:
 
 # Decomposition
 print('\nStart Decomposition')
-# df_new = pd.read_csv(f'imgs_{len(pathes_imgs)}_hsv.csv', index_col=0)
+df_new = pd.read_csv(
+    f'../../data/imgs_{len(pathes_imgs)}_hsv_samples_wing.csv', index_col=0)
 
 X = df_new.iloc[:, 1:]
 Z = StandardScaler().fit_transform(X)    # Normalization,  u=0, std=1
@@ -147,7 +181,8 @@ Y = df_new.iloc[:, 0]
 # ratio = pca.explained_variance_ratio_
 # pd.DataFrame(ratio).cumsum().plot()
 # plt.savefig('tmp/ratio.jpg')
-n_neighbors = int(len(pathes_imgs)*0.1)
+n_neighbors = int(len(pathes_imgs)*0.05)
+
 dimension_reductor = umap.UMAP(
     n_components=3, n_neighbors=n_neighbors, random_state=42)
 embedding = dimension_reductor.fit_transform(Z)
@@ -157,7 +192,9 @@ embedding = dimension_reductor.fit_transform(Z)
 # ====================================================================================================
 print('\nClustering performance evaluation')
 
-dir_save = Path('tmp/cluster_test')
+time_ = datetime.now().strftime("%y%m%d_%H%M")
+# dir_save = Path('../tmp/cluster_test')
+dir_save = Path(f'../../data/tmp/cluster_test_{time_}')
 dir_save.mkdir(exist_ok=True, parents=True)
 
 n_cluster = range(2, 21)
@@ -195,7 +232,7 @@ for metric, score in zip(metrics_, scores):
     plt.close()
     print(f'\t{str(dir_save.joinpath(f"Birch_cluster_{metric}.jpg"))} saved')
 
-weighted_scores[:3] = 0  # cluster must > 3
+weighted_scores[:5] = 0  # cluster must > 10
 idx_ = np.argmax(weighted_scores)
 best_n_cluster = n_cluster[idx_]
 
@@ -223,8 +260,9 @@ print('\t', 'Clustering id and size : ',
 
 df_label = pd.concat(
     [df_new['Name'], pd.DataFrame(cls_ids, columns=['label'])], axis=1)
-df_label.to_csv(f'imgs_label_byHSV.csv')
-print(f'imgs_label_byHSV.csv saved')
+path_save_label = f'../../data/imgs_label_byHSV.csv'
+df_label.to_csv(path_save_label)
+print(f'{path_save_label} saved')
 
 
 # ====================================================================================================
@@ -254,7 +292,6 @@ print(f'\n{str(dir_save.joinpath("clusters_3d.html"))} saved')
 
 # plotting Thumbnail of imgs by clustering
 print('\nPlotting Thumbnail of imgs by clustering')
-
 index_id = {}
 for id in df_label.label.unique():
     indexes = df_label[df_label.label == id].index.values
@@ -262,10 +299,10 @@ for id in df_label.label.unique():
 
 
 def plot_imgs_cluster(imgs: np.array, id: int, index: list, df_label: pd.DataFrame):
-    ncols = 12
+    ncols = 20
     nrows = math.ceil(len(index)/ncols)
     fig, axes = plt.subplots(nrows=nrows, ncols=ncols,
-                             figsize=(16, 16*nrows/ncols))
+                             figsize=(ncols, nrows))
     title = f"Cluster_{id}"
     fig.suptitle(title, fontsize=int(24*nrows/ncols), y=0.92)
     for i, ax in enumerate(axes.flatten()):
@@ -287,20 +324,20 @@ for id, index in index_id.items():
     imgs = []
     for idx in index:
         name = df_label.Name[idx]
-        path = dir_imgs.joinpath(name + '.png')
+        path = dir_imgs.joinpath(name + '_cropped.png')
         img = io.imread(path)
         imgs.append(img)
     imgs_numpy = np.asarray(imgs)
     plot_imgs_cluster(imgs=imgs_numpy, id=id, index=index, df_label=df_label)
 
-# get imgs by cld_id
-for id in np.unique(cls_ids):
-    dir_save.joinpath(str(id)).mkdir(exist_ok=True, parents=True)
 
-for idx, path in enumerate(pathes_imgs):
-    name = path.stem
-    print(idx, name, end='\t\t\r')
-    cls_id = cls_ids[idx]
-    # if cls_id == 1 or cls_id == 2:
-    shutil.copyfile(dir_imgs.joinpath(name + '.png'),
-                    dir_save.joinpath(str(cls_id), name + '.png'))
+# for id in np.unique(cls_ids):
+#     dir_save.joinpath(str(id)).mkdir(exist_ok=True, parents=True)
+
+# for idx, path in enumerate(pathes_imgs):
+#     name = path.stem
+#     print(idx, name, end='\t\t\r')
+#     cls_id = cls_ids[idx]
+
+#     shutil.copyfile(dir_imgs.joinpath(name + '.png'),
+#                     dir_save.joinpath(str(cls_id), name + '.jpg'))
