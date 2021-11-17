@@ -8,6 +8,8 @@ from typing import Counter
 import numpy as np
 import skimage.io as io
 from PIL import Image
+import math
+import matplotlib.pyplot as plt
 
 
 # -------------------------------------------------------------------------------------------------
@@ -157,3 +159,4 @@ for idx, name in enumerate(masks_name):
     io.imsave(dir_target.joinpath(name + '.png'), img_)
     io.imsave(dir_target.joinpath(name + '_UnetRmbg.png'), img_rmgb)
     print(f'{idx:4d}, {name} saved')
+

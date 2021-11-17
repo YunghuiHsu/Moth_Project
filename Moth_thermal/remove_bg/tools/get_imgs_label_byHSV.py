@@ -38,8 +38,8 @@ colors = ['#000080', '#00008b', '#0000ff', '#006400', '#008000', '#008080',
 # Sample pixels on moth specimen and calculate HSV values
 # ====================================================================================================
 
-# dir_imgs = Path('../../data/data_for_Sup_train/imgs/')
-dir_imgs = Path('../../data/origin')
+dir_imgs = Path('../../data/data_for_Sup_train/imgs/')
+# dir_imgs = Path('../../data/origin')
 
 pathes_imgs = list(dir_imgs.glob('*.png'))
 print(f'Number of imgs : {len(pathes_imgs)}')
@@ -91,14 +91,14 @@ def sample_img(img: np.ndarray, sample_loc: dict, size: int = 3, save_crop: bool
 # moth_hsv_ = dict()
 # print(f'Samplimg HSV by grids')
 # for idx, path in enumerate(pathes_imgs):
-#     if idx % 5 == 0:
-#         name = path.stem.split('_cropped')[0]
-#         img = io.imread(path)
-#         wing_sample_hsv = dict()
-#         wing_sample_hsv = sample_img(
-#             img, samples_grid, size=3, save_crop=False)
-#         moth_hsv_[name] = wing_sample_hsv
-#         print(f'\t{idx:04d}, {name:50s}', end='\r')
+#     # if idx % 5 == 0:
+#     name = path.stem.split('_cropped')[0]
+#     img = io.imread(path)
+#     wing_sample_hsv = dict()
+#     wing_sample_hsv = sample_img(
+#         img, samples_grid, size=3, save_crop=False)
+#     moth_hsv_[name] = wing_sample_hsv
+#     print(f'\t{idx:04d}, {name:50s}', end='\r')
 #     # if idx == 600:
 #     #     break
 
@@ -131,34 +131,38 @@ df_std = df_std_s
 # filter grid where std(hue) less variant
 threshold = np.quantile(df_std, 0.5)
 loc_filter = df_std[df_std > threshold].index.values
-print(f'sample points from {len(samples_grid)} to {len(loc_filter)}')
+print(f'\nsample points from {len(samples_grid)} to {len(loc_filter)}')
 
 
-# samples_grid_filter = {}
-# for obj in loc_filter:
-#     x, y, _ = obj.split('_')
-#     samples_grid_filter[f'{x}_{y}'] = int(y), int(x)
-# # len(samples_grid_filter)
+samples_grid_wings = {}
+for obj in loc_filter:
+    x, y, _ = obj.split('_')
+    samples_grid_wings[f'{x}_{y}'] = int(y), int(x)
+# len(samples_grid_wings)
 
-# moth_hsv = dict()
-# print(f'Samplimg HSV on Wings')
-# for idx, path in enumerate(pathes_imgs):
-#     # if idx % 13 == 0:
-#     name = path.stem.split('_cropped')[0]
-#     img = io.imread(path)
+np.save('../../data/samples_grid_wings.npy', samples_grid_wings)
+samples_grid_wings_ = np.load('../../data/samples_grid_wings.npy', allow_pickle=True)
+samples_grid_wings = [rows for idx, rows in np.ndenumerate(samples_grid_wings_)][0]
+print(f'\n{samples_grid_wings} loaded')
 
-#     wing_sample_hsv = dict()
-#     wing_sample_hsv = sample_img(
-#         img, samples_grid_filter, size=3, save_crop=False)
-#     moth_hsv[name] = wing_sample_hsv
+moth_hsv = dict()
+print(f'Samplimg HSV on Wings')
+for idx, path in enumerate(pathes_imgs):
+    if idx % 17 == 0:
+        name = path.stem.split('_cropped')[0]
+        img = io.imread(path)
 
-#     print(f'\t{idx:04d}, {name:50s}', end='\r')
-#     # if idx == 600:
-#     #     break
+        wing_sample_hsv = dict()
+        wing_sample_hsv = sample_img(img, samples_grid_wings, size=3, save_crop=True)
+    moth_hsv[name] = wing_sample_hsv
 
-# df_new = moth_hsv_to_df(moth_hsv)
-# df_new.to_csv(
-#     f'../../data/imgs_{len(pathes_imgs)}_hsv_samples_wing.csv')
+    print(f'\t{idx:04d}, {name:50s}', end='\r')
+    if idx == 600:
+        break
+
+df_new = moth_hsv_to_df(moth_hsv)
+df_new.to_csv(
+    f'../../data/imgs_{len(pathes_imgs)}_hsv_samples_wing.csv')
 
 # ====================================================================================================
 # Clustering moth specimen images depends HSV values
