@@ -1,3 +1,4 @@
+
 import argparse
 import logging
 import sys
@@ -180,16 +181,11 @@ def train_net(net,
         X_train_arg, y_train_arg, input_size=input_size, output_size=output_size, img_aug=True)
     train_loader = DataLoader(
         train_set, batch_sampler=batchsampler, num_workers=2, pin_memory=True)
+    n_train = len(train_set)
 
-    dir_save_Argmentation = Path('tmp/Argmentation')
-    try:
-        if batchsampler in locals().values():
-            sampler_method = str(type(batchsampler)).split('.')[-1]
-            dir_save_Argmentation.joinpath(sampler_method)
-    except Exception as e:
-        pass
-
+    dir_save_Argmentation = Path('tmp/Check_Argmentation')
     dir_save_Argmentation.mkdir(exist_ok=True, parents=True)
+
     # ------------------------------------------------------
 
     # (Initialize logging)
@@ -289,7 +285,7 @@ def train_net(net,
 
                 # --------------------------------------------------------------------------------------------
 
-                # Choose loose function 
+                # Choose loose function
                 # 1. cross_entrophy + dice_loss
                 # train_loss_batch = criterion(masks_pred, masks_true) \
                 #     + dice_loss(F.softmax(masks_pred, dim=1).float(),             # (b, class, h, w)
@@ -376,9 +372,9 @@ def train_net(net,
 
             # get mask_pred
             # threshold = 0.5
-            full_mask_ = torch.softmax(
-                masks_pred, dim=1).float().clone().detach().cpu()
-            full_mask = torch.tensor(full_mask_ > 0.5).float()
+            full_mask = torch.softmax(
+                masks_pred, dim=1).float().clone()
+            full_mask = torch.tensor(full_mask > 0.5).float()[:,0,::]  # (b, c, h, w)
 
             logging.info(
                 f'Valid - Dice_score: {val_score:.4f}, Loss:{valid_loss:.4f}')
@@ -392,7 +388,7 @@ def train_net(net,
                 'masks': {
                     'true': wandb.Image(masks_true[0].float().cpu()),
                     # 'pred': wandb.Image(torch.softmax(masks_pred, dim=1)[0].float().cpu()),
-                    'pred': wandb.Image(full_mask[0]),
+                    'pred': wandb.Image(full_mask[0].detach().cpu()),
                 },
                 'step': global_step,
                 'epoch': epoch,
@@ -400,15 +396,20 @@ def train_net(net,
             })
 
             # ------------------------------------------------------
-            # AddBatchArgmentation test
-            if epoch % 10 == 0:
+            # Check Argmentaion and  Predict satatus
+            if epoch % 5 == 0:
+                print(images.shape)
+                print(torch.stack([masks_true.float()]*3, dim=1).shape)
+                print(torch.stack([full_mask]*3, dim=1).shape)
                 vutils.save_image(
-                    torch.cat([images,
-                               torch.stack([masks_true.float()]*3, dim=1),
-                               full_mask],
-                              dim=0).data.cpu(),
-                    dir_save_Argmentation.joinpath(f'batch_{idx}.jpg'),
+                    torch.cat([
+                        images,
+                        torch.stack([masks_true.float()]*3, dim=1),
+                        torch.stack([full_mask]*3, dim=1)
+                    ], dim=0).data.cpu(),
+                    dir_save_Argmentation.joinpath(f'Epoch_{epoch}.jpg'),
                     nrow=batch_size)
+                print(f'Epoch_{epoch}.jpg saved')
             # ------------------------------------------------------
 
             # ---------------------------------------------------------------------------------------------------------------------------
