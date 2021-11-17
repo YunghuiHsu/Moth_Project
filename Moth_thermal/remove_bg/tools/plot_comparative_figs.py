@@ -1,4 +1,5 @@
 
+import sys
 import os
 import sys
 import glob
@@ -16,7 +17,7 @@ dir_benchmarks = Path('../data/data_for_Sup_predict/benchmarks')
 pathes_benchmarks = list(dir_benchmarks.glob('*.png'))
 dir_benchmarks_rmbg = Path('tmp/imgs_rmbg')
 paths_benchmarks_rmbg = list(dir_benchmarks_rmbg.glob('*.png'))
-sys.getsizeof(pathes_benchmarks_rmbg)
+sys.getsizeof(paths_benchmarks_rmbg)
 
 dir_mask = Path('../data/data_for_Sup_train/masks_211105')
 imgs_mask = list(dir_mask.glob('*.png'))
@@ -25,7 +26,7 @@ paths_benchmarks_mask = [
     path for path in imgs_mask if path.stem in names_benchmarks]
 len(paths_benchmarks_mask)
 
-dir_BatchAugment = Path('tmp/BatchAugment')
+dir_BatchAugment = Path('../tmp/BatchAugment')
 
 # dir_1st : MultiImg、SingleImg、Random;  dir_2st : 'Predict_rmbg', 'Predict_mask'
 method_BatchAugment = ['Random', 'SingleImg', 'MultiImg']
