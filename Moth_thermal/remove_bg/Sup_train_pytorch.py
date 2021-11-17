@@ -25,8 +25,7 @@ from utils.dice_score import dice_loss
 from utils.evaluate import evaluate
 from unet import UNet
 from utils.utils import early_stop, plt_learning_curve, get_masks_contour
-from utils.sampler_moth import AddBatchAugmentSampler, NonBatchAugmentSampler
-
+from utils.sampler_moth import SingleImgBatchAugmentSampler, MultiImgBatchAugmentSampler, RandomImgBatchAugmentSampler
 
 # =======================================================================================================
 # def get_args():
@@ -173,18 +172,23 @@ def train_net(net,
     y_train_arg = y_train + masks_arg_paths
     size_X_train = len(X_train)
 
-    batchsampler = AddBatchAugmentSampler(
-        X_train_arg, size_X_train, batch_size)
-    # batchsampler = NonBatchAugmentSampler(X_train_arg, size_X_train, batch_size)
+    # Sampler : SingleImgBatchAugmentSampler, MultiImgBatchAugmentSampler, RandomImgBatchAugmentSampler
+    batchsampler = MultiImgBatchAugmentSampler(X_train_arg, size_X_train, batch_size)
 
     train_set = MothDataset(
         X_train_arg, y_train_arg, input_size=input_size, output_size=output_size, img_aug=True)
     train_loader = DataLoader(
         train_set, batch_sampler=batchsampler, num_workers=2, pin_memory=True)
 
-    dir_save = Path('tmp/AddBatchAugment') if isinstance(batchsampler,
-                                                         AddBatchAugmentSampler) else Path('tmp/NonBatchAugment')
-    dir_save.mkdir(exist_ok=True, parents=True)
+    dir_save_Argmentation = Path('tmp/Argmentation')
+    try:
+        if batchsampler in locals().values():
+            sampler_method = str(type(batchsampler)).split('.')[-1]
+            dir_save_Argmentation.joinpath(sampler_method)
+    except Exception as e:
+        pass
+        
+    dir_save_Argmentation.mkdir(exist_ok=True, parents=True)
     # ------------------------------------------------------
 
     # (Initialize logging)
@@ -214,7 +218,7 @@ def train_net(net,
         optimizer, metric, patience=20)  # goal: maximize Dice score > 'max' / minimize Valid Loss > 'min'
 
     # grad_scaler = torch.cuda.amp.GradScaler(enabled=amp)
-    criterion = nn.CrossEntropyLoss()
+    # criterion = nn.CrossEntropyLoss()
     # shape = (b, h, w) if reduction ='none'
     criterion_3d = nn.CrossEntropyLoss(reduction='none')
     global_step = 0
@@ -266,17 +270,6 @@ def train_net(net,
             for idx, batch in enumerate(train_loader):
                 images = batch['image']
                 masks_true = batch['mask']
-
-                # ------------------------------------------------------
-                # AddBatchArgmentation test
-                if epoch == 0:
-                    vutils.save_image(
-                        torch.cat([images,
-                                   torch.stack([masks_true.float()]*3, dim=1)],
-                                  dim=0).data.cpu(),
-                        dir_save.joinpath(f'batch_{idx}.jpg'),
-                        nrow=8)
-                # ------------------------------------------------------
 
                 assert images.shape[1] == net.n_channels, \
                     f'Network has been defined with {net.n_channels} input channels, ' \
@@ -398,9 +391,8 @@ def train_net(net,
                 print(f'\nLoss fig saved : {dir_checkpoint}')
 
             # get mask_pred
-            threshold = 0.5
-            full_mask_ = torch.softmax(masks_pred, dim=1)[
-                0].float().clone().detach().cpu()
+            # threshold = 0.5
+            full_mask_ = torch.softmax(masks_pred, dim=1).float().clone().detach().cpu()
             full_mask = torch.tensor(full_mask_ > 0.5).float()
 
             logging.info(
@@ -415,13 +407,26 @@ def train_net(net,
                 'masks': {
                     'true': wandb.Image(masks_true[0].float().cpu()),
                     # 'pred': wandb.Image(torch.softmax(masks_pred, dim=1)[0].float().cpu()),
-                    'pred': wandb.Image(full_mask),
+                    'pred': wandb.Image(full_mask[0]),
                 },
                 'step': global_step,
                 'epoch': epoch,
                 **histograms
             })
 
+            
+            # ------------------------------------------------------
+            # AddBatchArgmentation test
+            if epoch %10 == 0:
+                vutils.save_image(
+                    torch.cat([images,
+                                torch.stack([masks_true.float()]*3, dim=1),
+                                full_mask],
+                                dim=0).data.cpu(),
+                    dir_save_Argmentation.joinpath(f'batch_{idx}.jpg'),
+                    nrow=batch_size)
+            # ------------------------------------------------------
+            
             # ---------------------------------------------------------------------------------------------------------------------------
             # get best model depends on valid_loss or val_score
             save_model_switch = False
