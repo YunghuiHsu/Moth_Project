@@ -21,10 +21,10 @@ from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 
 from utils.data_loading_moth import MothDataset
-from utils.dice_score import dice_loss
+from utils.dice_score import dice_loss, loss_contour_weighted
 from utils.evaluate import evaluate
 from unet import UNet
-from utils.utils import early_stop, plt_learning_curve, get_masks_contour
+from utils.utils import early_stop, plt_learning_curve
 from utils.sampler_moth import SingleImgBatchAugmentSampler, MultiImgBatchAugmentSampler, RandomImgBatchAugmentSampler
 
 # =======================================================================================================
@@ -142,7 +142,7 @@ def train_net(net,
         mask_paths), f'number imgs: {len(img_paths)} and masks: {len(mask_paths)} need equal '
 
     if not args.stratify_off:
-        df = pd.read_csv('imgs_label_byHSV.csv', index_col=0)
+        df = pd.read_csv('../data/imgs_label_byHSV.csv', index_col=0)
         assert len(df.Name) == len(
             img_paths), f'number of imgs: {len(img_paths)} and imgs_label_byHSV.csv: {len(df.label)} need equal '
         print(
@@ -173,7 +173,8 @@ def train_net(net,
     size_X_train = len(X_train)
 
     # Sampler : SingleImgBatchAugmentSampler, MultiImgBatchAugmentSampler, RandomImgBatchAugmentSampler
-    batchsampler = MultiImgBatchAugmentSampler(X_train_arg, size_X_train, batch_size)
+    batchsampler = MultiImgBatchAugmentSampler(
+        X_train_arg, size_X_train, batch_size)
 
     train_set = MothDataset(
         X_train_arg, y_train_arg, input_size=input_size, output_size=output_size, img_aug=True)
@@ -187,7 +188,7 @@ def train_net(net,
             dir_save_Argmentation.joinpath(sampler_method)
     except Exception as e:
         pass
-        
+
     dir_save_Argmentation.mkdir(exist_ok=True, parents=True)
     # ------------------------------------------------------
 
@@ -220,7 +221,7 @@ def train_net(net,
     # grad_scaler = torch.cuda.amp.GradScaler(enabled=amp)
     # criterion = nn.CrossEntropyLoss()
     # shape = (b, h, w) if reduction ='none'
-    criterion_3d = nn.CrossEntropyLoss(reduction='none')
+    # criterion_3d = nn.CrossEntropyLoss(reduction='none')
     global_step = 0
 
     # Parameters that should be stored.
@@ -281,65 +282,48 @@ def train_net(net,
 
                 # with torch.cuda.amp.autocast(enabled=amp):
                 masks_pred = net(images)
-                print('masks_pred : ', masks_pred.shape)  # (b, class, h, w)
-                # (b, h, w), torch.int64, [0, 1]
+                # (b, class, h, w)
+                print('masks_pred : ', masks_pred.shape)
+                # (b, h, w), torch.int64, [0, 1].
                 print('masks_true : ', masks_true.shape)
-                # -----------------------------------------------------------------------------------
-                # get mask_contour and weight it for loss calculation (optional)
-                # -----------------------------------------------------------------------------------
-
-                masks_contour = get_masks_contour(
-                    masks_true.cpu().numpy().astype(np.uint8)).to(device)  # (b, h, w), torch.int64, [0, 1]
-
-                y = torch.ones(1, dtype=torch.int64).to(device)
-                masks_weighted = torch.where(
-                    masks_contour == 1, contour_weight*y, y)  # (b, h, w)
-
-                # caculate weighted loss based on countour
-                masks_pred_one_hot = F.softmax(
-                    masks_pred, dim=1, dtype=torch.float32)                 # (b, class, h, w)
-                masks_true_one_hot = F.one_hot(
-                    masks_true, net.n_classes).float().permute(0, 3, 1, 2)  # (b, h, w) > (b, h, w, class) > (b, class, h, w)
-
-                masks_contour_pred_one_hot = masks_pred_one_hot * \
-                    torch.stack((masks_contour, masks_contour), dim=1)
-                masks_contour_true_one_hot = masks_true_one_hot * \
-                    torch.stack((masks_contour, masks_contour), dim=1)
-
-                cross_entrophy_weighted = (criterion_3d(                                        # nn.CrossEntropyLoss(reduction='none') : (b, h, w)
-                    masks_pred, masks_true) * masks_weighted).mean()
-                dice_loss_allArea = dice_loss(
-                    masks_pred_one_hot, masks_true_one_hot, multiclass=True)
-                dice_loss_contour = dice_loss(
-                    masks_contour_pred_one_hot, masks_contour_true_one_hot, multiclass=True)
-
-                train_loss_contour_weighted = cross_entrophy_weighted + \
-                    dice_loss_allArea + dice_loss_contour*contour_weight
 
                 # --------------------------------------------------------------------------------------------
 
+                # Choose loose function 
+                # 1. cross_entrophy + dice_loss
                 # train_loss_batch = criterion(masks_pred, masks_true) \
                 #     + dice_loss(F.softmax(masks_pred, dim=1).float(),             # (b, class, h, w)
                 #                 F.one_hot(masks_true, net.n_classes).permute(     # (b, class, h, w)
                 #         0, 3, 1, 2).float(),
                 #     multiclass=True)
 
+                # 2. (cross_entrophy + dice_loss) weighted by countour
+                # get mask_contour and weight it for loss calculation (optional)
+                cross_entrophy_weighted, dice_loss_AllArea, dice_loss_Contour = loss_contour_weighted(
+                    masks_true, masks_pred, net, device, contour_weight
+                )
+                train_loss_contour_weighted = cross_entrophy_weighted + \
+                    dice_loss_AllArea + dice_loss_Contour*contour_weight
+
+                # train_loss_batch or train_loss_contour_weighted
+                train_loss = train_loss_contour_weighted
+
                 # optimizer.zero_grad(set_to_none=True)
                 # grad_scaler.scale(loss_train).backward()
                 # grad_scaler.step(optimizer)
                 # grad_scaler.update()
                 optimizer.zero_grad()
-                train_loss_contour_weighted.backward()
+                train_loss.backward()
                 optimizer.step()
 
                 pbar.update(images.shape[0])
                 global_step += 1
                 # epoch_loss += loss_train.item()
                 train_loss_collector = np.append(
-                    train_loss_collector, train_loss_contour_weighted.cpu().detach().numpy())
+                    train_loss_collector, train_loss.cpu().detach().numpy())
 
                 pbar.set_postfix(
-                    **{'loss (batch)': train_loss_contour_weighted.item()})
+                    **{'loss (batch)': train_loss.item()})
 
             # ==========================================================================================
             # Evaluation round
@@ -392,7 +376,8 @@ def train_net(net,
 
             # get mask_pred
             # threshold = 0.5
-            full_mask_ = torch.softmax(masks_pred, dim=1).float().clone().detach().cpu()
+            full_mask_ = torch.softmax(
+                masks_pred, dim=1).float().clone().detach().cpu()
             full_mask = torch.tensor(full_mask_ > 0.5).float()
 
             logging.info(
@@ -414,19 +399,18 @@ def train_net(net,
                 **histograms
             })
 
-            
             # ------------------------------------------------------
             # AddBatchArgmentation test
-            if epoch %10 == 0:
+            if epoch % 10 == 0:
                 vutils.save_image(
                     torch.cat([images,
-                                torch.stack([masks_true.float()]*3, dim=1),
-                                full_mask],
-                                dim=0).data.cpu(),
+                               torch.stack([masks_true.float()]*3, dim=1),
+                               full_mask],
+                              dim=0).data.cpu(),
                     dir_save_Argmentation.joinpath(f'batch_{idx}.jpg'),
                     nrow=batch_size)
             # ------------------------------------------------------
-            
+
             # ---------------------------------------------------------------------------------------------------------------------------
             # get best model depends on valid_loss or val_score
             save_model_switch = False
