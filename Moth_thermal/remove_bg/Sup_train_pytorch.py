@@ -374,7 +374,7 @@ def train_net(net,
             # threshold = 0.5
             full_mask = torch.softmax(
                 masks_pred, dim=1).float().clone()
-            full_mask = torch.tensor(full_mask > 0.5).float()[:,0,::]  # (b, c, h, w)
+            full_mask = torch.tensor(full_mask > 0.5).float()[:,1,::]  # (b, c, h, w)
 
             logging.info(
                 f'Valid - Dice_score: {val_score:.4f}, Loss:{valid_loss:.4f}')
@@ -397,7 +397,7 @@ def train_net(net,
 
             # ------------------------------------------------------
             # Check Argmentaion and  Predict satatus
-            if epoch % 5 == 0:
+            if epoch % 1 == 0:
                 print(images.shape)
                 print(torch.stack([masks_true.float()]*3, dim=1).shape)
                 print(torch.stack([full_mask]*3, dim=1).shape)
@@ -408,7 +408,7 @@ def train_net(net,
                         torch.stack([full_mask]*3, dim=1)
                     ], dim=0).data.cpu(),
                     dir_save_Argmentation.joinpath(f'Epoch_{epoch}.jpg'),
-                    nrow=batch_size)
+                    nrow=batch_size, pad_value=1)
                 print(f'Epoch_{epoch}.jpg saved')
             # ------------------------------------------------------
 
