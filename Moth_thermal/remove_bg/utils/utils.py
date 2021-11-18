@@ -1,8 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import cv2
-import torch
+
 
 
 def plot_img_and_mask(img, mask):

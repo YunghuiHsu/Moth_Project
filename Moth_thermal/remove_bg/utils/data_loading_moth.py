@@ -4,8 +4,6 @@ from os import listdir
 from os.path import splitext
 import random
 from pathlib import Path
-from imgaug.augmenters.geometric import Rotate, TranslateX, TranslateY
-
 import numpy as np
 import torch
 from PIL import Image
@@ -15,56 +13,79 @@ from torch.utils.data import Dataset
 from torchvision.transforms import transforms
 import torchvision.transforms.functional as F
 from imgaug import augmenters as iaa
+# from skimage import exposure
 
 # =========================================================================================
 # img augmentation
 
 
-def img_aug_shape(img, mask):
+def img_aug_shape(img:np.ndarray, mask):
     '''
     img.shape == (h, w, c) or (h,w) and img.dtype : uint8
     '''
     # flip horizontal
-    aug_flip = iaa.Fliplr(1)
-
-    # shape transform
-    aug_seq = iaa.Sequential([
-        # rotate by -10 to +10 degrees
-        iaa.Rotate(random.uniform(-1, 1)*15),
-        iaa.Affine(shear=random.uniform(-1, 1)*15),
-        # scale images to 90-110% of their size, individually per axis
-        iaa.Affine(scale=random.uniform(*[0.95, 1.05])),
-        iaa.Affine(translate_percent=random.uniform(*[-0.05, 0.05]))
-    ])
     if random.random() > 0.5:
+        aug_flip = iaa.Fliplr(1)
         img = aug_flip.augment_image(img)
         mask = aug_flip.augment_image(mask)
+
+    # shape transform
+    cval=0
+    aug_seq = iaa.Sequential([
+        # rotate by -degrees to +degrees 
+        iaa.Affine(rotate=random.uniform(-1, 1)*15, cval=cval), 
+        iaa.Affine(shear=random.uniform(-1, 1)*5, cval=cval),
+        # scale images to 90-110% of their size, individually per axis
+        iaa.Affine(scale=random.uniform(*[0.95, 1.05]), cval=cval),
+        iaa.Affine(translate_percent=random.uniform(*[-0.05, 0.05]), cval=cval),
+        # # Apply random four point perspective transformations to images.
+        # iaa.PerspectiveTransform(scale=random.uniform(*[0.001, 0.05])),
+        # # Distort images locally by moving points around
+        # iaa.PiecewiseAffine(scale=random.uniform(*[0.001, 0.05]))
+    ])
 
     img = aug_seq.augment_image(img)
     mask = aug_seq.augment_image(mask)
     return img, mask
 
 
-def img_aug_color_noise(img):
+def img_aug_noise(img:np.ndarray):
     '''
     img.shape == (n, h, w, c) or (h, w) and img.dtype : uint8
     '''
+    aug_seq = iaa.SomeOf((1, None), [
     # add coarse(rectangle shape) noise
     # size_percent : drop them on an image with min - max% percent of the original size
-    aug_noise = iaa.CoarseDropout(p=(0.01, 0.05), size_percent=(.01, .5), per_channel=0.5)
-
-    aug_color = iaa.Sequential([
-        iaa.Multiply((0.9, 1.1), per_channel=0.05),
-        iaa.LinearContrast((0.9, 1.1), per_channel=0.1)
+    iaa.CoarseDropout(p=(0.01, 0.1), size_percent=(.1, .5), per_channel=0.5),
+    # Add gaussian noise to an image, sampled channelwise from N(0, 0.2*255)
+    iaa.AdditiveGaussianNoise(scale=(0, 0.2*255), per_channel=True),
     ])
-    # img_ = img.transpose((1, 2, 0))  # (c, h, w) > (h, w, c)
-    # img_ = (img*255).astype('uint8')
-
-    img = aug_noise.augment_image(img)
-    img = aug_color.augment_image(img)
-
-    # img_ = img_.transpose((2, 0, 1))  # (h, w, c) > (c, h, w)
+    img = aug_seq.augment_image(img)
+    
     return img
+
+def img_aug_color_contrast(img:np.ndarray):
+    aug_seq = iaa.SomeOf((0, None), [
+        # Multiply all pixels in an image with a specific value, thereby making the image darker or brighter.
+        iaa.Multiply((0.8, 1.2), per_channel=0.05),
+        # Multiply hue and saturation by random values between  values 
+        iaa.MultiplyHueAndSaturation((0.9, 1.1), per_channel=0.05),
+        # alpha-blends the contrast-enhanced augmented images with the original input images using random blend strengths. 
+        iaa.Alpha((0.0, 0.5), iaa.AllChannelsHistogramEqualization(), per_channel=0.05)
+    ])
+    img = aug_seq.augment_image(img)
+    return img
+
+def img_aug_blur_sharpen(img:np.ndarray):
+    if random.random() > 0.3:
+        aug_trans = iaa.OneOf([
+                iaa.GaussianBlur(sigma=(0.0, 0.5)),
+                iaa.Sharpen(alpha=(0, 1), lightness=(0.75, 2.0))
+        ])
+        img = aug_trans.augment_image(img)
+    return img
+
+
 # =========================================================================================
 
 
@@ -203,7 +224,9 @@ class MothDataset(Dataset):
         if self.img_aug:
             # img.shape == (h, w, c) or (h, w) and img.dtype : uint8
             img_, mask_ = img_aug_shape(img_, mask_)
-            img_ = img_aug_color_noise(img_)
+            img_ = img_aug_color_contrast(img_)
+            img_ = img_aug_noise(img_)
+            img_ = img_aug_blur_sharpen(img_)
 
         # ndarray to tensor
         img = self.preprocess(img_, self.input_size, self.output_size, False)
