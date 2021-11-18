@@ -40,9 +40,9 @@ parser.add_argument("--save_epoch", '-save_e', type=int,
 
 # data
 parser.add_argument('--XX_DIR', dest='XX_DIR', type=str,
-                    default='../data/data_for_Sup_train/imgs/')
+                    default='../data/data_for_Sup_train/imgs')
 parser.add_argument('--YY_DIR', dest='YY_DIR', type=str,
-                    default='../data/data_for_Sup_train/masks_211105/')
+                    default='../data/data_for_Sup_train/masks_211105')
 parser.add_argument('--SAVEDIR', dest='SAVEDIR', type=str,
                     default='model/Unet_rmbg')  # Unet_rmbg
 
@@ -156,7 +156,7 @@ def train_net(net,
     train_set = MothDataset(
         X_train, y_train, input_size=input_size, output_size=output_size, img_aug=True)
     val_set = MothDataset(
-        X_valid, y_valid, input_size=input_size, output_size=output_size, img_aug=True)
+        X_valid, y_valid, input_size=input_size, output_size=output_size, img_aug=False)
 
     n_val = len(val_set)
     n_train = len(train_set)
@@ -397,10 +397,7 @@ def train_net(net,
 
             # ------------------------------------------------------
             # Check Argmentaion and  Predict satatus
-            if epoch % 1 == 0:
-                print(images.shape)
-                print(torch.stack([masks_true.float()]*3, dim=1).shape)
-                print(torch.stack([full_mask]*3, dim=1).shape)
+            if epoch % 5 == 0:
                 vutils.save_image(
                     torch.cat([
                         images,
