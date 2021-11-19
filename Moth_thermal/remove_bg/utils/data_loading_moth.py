@@ -19,7 +19,7 @@ from imgaug import augmenters as iaa
 # img augmentation
 
 
-def img_aug_shape(img:np.ndarray, mask):
+def img_aug_shape(img: np.ndarray, mask):
     '''
     img.shape == (h, w, c) or (h,w) and img.dtype : uint8
     '''
@@ -30,14 +30,15 @@ def img_aug_shape(img:np.ndarray, mask):
         mask = aug_flip.augment_image(mask)
 
     # shape transform
-    cval=0
+    cval = 0
     aug_seq = iaa.Sequential([
-        # rotate by -degrees to +degrees 
-        iaa.Affine(rotate=random.uniform(-1, 1)*15, cval=cval), 
+        # rotate by -degrees to +degrees
+        iaa.Affine(rotate=random.uniform(-1, 1)*15, cval=cval),
         iaa.Affine(shear=random.uniform(-1, 1)*5, cval=cval),
         # scale images to 90-110% of their size, individually per axis
         iaa.Affine(scale=random.uniform(*[0.95, 1.05]), cval=cval),
-        iaa.Affine(translate_percent=random.uniform(*[-0.05, 0.05]), cval=cval),
+        iaa.Affine(translate_percent=random.uniform(
+            *[-0.05, 0.05]), cval=cval),
         # # Apply random four point perspective transformations to images.
         # iaa.PerspectiveTransform(scale=random.uniform(*[0.001, 0.05])),
         # # Distort images locally by moving points around
@@ -49,38 +50,42 @@ def img_aug_shape(img:np.ndarray, mask):
     return img, mask
 
 
-def img_aug_noise(img:np.ndarray):
+def img_aug_noise(img: np.ndarray):
     '''
     img.shape == (n, h, w, c) or (h, w) and img.dtype : uint8
     '''
     aug_seq = iaa.SomeOf((1, None), [
-    # add coarse(rectangle shape) noise
-    # size_percent : drop them on an image with min - max% percent of the original size
-    iaa.CoarseDropout(p=(0.01, 0.05), size_percent=(0.02, 0.20), per_channel=0.5),
-    # Add gaussian noise to an image, sampled channelwise from N(0, 0.2*255)
-    iaa.AdditiveGaussianNoise(scale=(0, 0.2*255), per_channel=True),
+        # add coarse(rectangle shape) noise
+        # size_percent : drop them on an image with min - max% percent of the original size
+        iaa.CoarseDropout(
+            p=(0.01, 0.05), size_percent=(0.02, 0.2), per_channel=False),
+        # Add gaussian noise to an image, sampled channelwise from N(0, 0.2*255)
+        iaa.AdditiveGaussianNoise(scale=(0, 0.2*255), per_channel=True),
     ])
     img = aug_seq.augment_image(img)
-    
+
     return img
 
-def img_aug_color_contrast(img:np.ndarray):
-    aug_seq = iaa.SomeOf((0, None), [
+
+def img_aug_color_contrast(img: np.ndarray):
+    aug_seq = iaa.SomeOf((1, None), [
         # Multiply all pixels in an image with a specific value, thereby making the image darker or brighter.
         iaa.Multiply((0.8, 1.2), per_channel=0.05),
-        # Multiply hue and saturation by random values between  values 
+        # Multiply hue and saturation by random values between  values
         iaa.MultiplyHueAndSaturation((0.9, 1.1), per_channel=0.05),
-        # alpha-blends the contrast-enhanced augmented images with the original input images using random blend strengths. 
-        iaa.Alpha((0.0, 0.5), iaa.AllChannelsHistogramEqualization(), per_channel=0.05)
+        # alpha-blends the contrast-enhanced augmented images with the original input images using random blend strengths.
+        iaa.Alpha((0.0, 0.5), iaa.AllChannelsHistogramEqualization(),
+                  per_channel=0.05)
     ])
     img = aug_seq.augment_image(img)
     return img
 
-def img_aug_blur_sharpen(img:np.ndarray):
+
+def img_aug_blur_sharpen(img: np.ndarray):
     if random.random() > 0.3:
         aug_trans = iaa.OneOf([
-                iaa.GaussianBlur(sigma=(0.0, 0.5)),
-                iaa.Sharpen(alpha=(0, 1), lightness=(0.75, 2.0))
+            iaa.GaussianBlur(sigma=(0.0, 0.5)),
+            iaa.Sharpen(alpha=(0, 1), lightness=(0.75, 2.0))
         ])
         img = aug_trans.augment_image(img)
     return img
@@ -163,6 +168,7 @@ class BasicDataset(Dataset):
             'mask': mask
         }
 
+
 class MothDataset(Dataset):
     def __init__(self, imgs_paths: list, masks_paths: list,
                  input_size: tuple = (256, 256), output_size: tuple = (256, 256),
@@ -218,8 +224,10 @@ class MothDataset(Dataset):
         name = self.names[idx]
         img_ = io.imread(self.imgs_paths[idx])   # (h, w, c)
         # (h, w),  dtype = float64
-        mask_ = io.imread(self.masks_paths[idx], as_gray=True)   # as_gray=True > load as (h, w),  [0, 1], dtype = float64 
-        mask_ = (mask_*255).astype('uint8')                      #  [0, 1], dtype = float64  >　[0, 255], dtype = uint8 
+        # as_gray=True > load as (h, w),  [0, 1], dtype = float64
+        mask_ = io.imread(self.masks_paths[idx], as_gray=True)
+        # [0, 1], dtype = float64  >　[0, 255], dtype = uint8
+        mask_ = (mask_*255).astype('uint8')
 
         if self.img_aug:
             # img.shape == (h, w, c) or (h, w) and img.dtype : uint8
