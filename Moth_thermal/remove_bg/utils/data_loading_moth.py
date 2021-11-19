@@ -56,7 +56,7 @@ def img_aug_noise(img:np.ndarray):
     aug_seq = iaa.SomeOf((1, None), [
     # add coarse(rectangle shape) noise
     # size_percent : drop them on an image with min - max% percent of the original size
-    iaa.CoarseDropout(p=(0.01, 0.1), size_percent=(.1, .5), per_channel=0.5),
+    iaa.CoarseDropout(p=(0.01, 0.05), size_percent=(0.02, 0.20), per_channel=0.5),
     # Add gaussian noise to an image, sampled channelwise from N(0, 0.2*255)
     iaa.AdditiveGaussianNoise(scale=(0, 0.2*255), per_channel=True),
     ])
