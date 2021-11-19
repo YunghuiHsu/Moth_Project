@@ -153,18 +153,18 @@ def train_net(net,
         img_paths, mask_paths, test_size=val_percent, random_state=1,
         stratify=df.label if not args.stratify_off else None)
 
-    train_set = MothDataset(
-        X_train, y_train, input_size=input_size, output_size=output_size, img_aug=True)
+    # train_set = MothDataset(
+    #     X_train, y_train, input_size=input_size, output_size=output_size, img_aug=True)
     val_set = MothDataset(
         X_valid, y_valid, input_size=input_size, output_size=output_size, img_aug=False)
 
     n_val = len(val_set)
-    n_train = len(train_set)
+    # n_train = len(train_set)
 
     # Create data loaders
     loader_args = dict(batch_size=batch_size, num_workers=2,
                        pin_memory=True, drop_last=True)
-    train_loader = DataLoader(train_set, shuffle=True, **loader_args)
+    # train_loader = DataLoader(train_set, shuffle=True, **loader_args)
     val_loader = DataLoader(val_set, shuffle=False, **loader_args)
 
     # ------------------------------------------------------
@@ -182,6 +182,7 @@ def train_net(net,
     train_loader = DataLoader(
         train_set, batch_sampler=batchsampler, num_workers=2, pin_memory=True)
     n_train = len(train_set)
+    n_iter = len(train_loader)*batch_size
 
     dir_save_Argmentation = Path('tmp/Check_Argmentation')
     dir_save_Argmentation.mkdir(exist_ok=True, parents=True)
@@ -259,7 +260,7 @@ def train_net(net,
                 optimizer, metric, patience=20)
         # ------------------------------------------------------------------------------------------
 
-        with tqdm(total=n_train, desc=f'Epoch {epoch + 1}/{epochs}', unit='img') as pbar:
+        with tqdm(total=n_iter, desc=f'Epoch {epoch + 1}/{epochs}', unit='img') as pbar:
             # ==========================================================================================
             # Train round
             # ==========================================================================================
