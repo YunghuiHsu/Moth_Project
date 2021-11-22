@@ -26,7 +26,7 @@ from utils.dice_score import dice_loss, loss_contour_weighted
 from utils.evaluate import evaluate
 from unet import UNet
 from utils.utils import early_stop, plt_learning_curve
-from utils.sampler_moth import SingleImgBatchAugmentSampler, MultiImgBatchAugmentSampler, RandomImgBatchAugmentSampler
+from utils.sampler_moth import ImgBatchAugmentSampler
 
 # =======================================================================================================
 # def get_args():
@@ -173,9 +173,10 @@ def train_net(net,
     y_train_arg = y_train + masks_arg_paths
     size_X_train = len(X_train)
 
-    # Sampler : SingleImgBatchAugmentSampler, MultiImgBatchAugmentSampler, RandomImgBatchAugmentSampler
-    batchsampler = MultiImgBatchAugmentSampler(
-        X_train_arg, size_X_train, batch_size)
+    # Sampler : single, multi, random, mix
+    arg_flag = 'mix'
+    batchsampler = ImgBatchAugmentSampler(
+        X_train_arg, size_X_train, batch_size, flag=arg_flag, sample_factor=1.0)
 
     train_set = MothDataset(
         X_train_arg, y_train_arg, input_size=input_size, output_size=output_size, img_aug=True)
@@ -184,7 +185,7 @@ def train_net(net,
     n_train = len(train_set)
     n_iter = len(train_loader)*batch_size
 
-    dir_save_Argmentation = Path('tmp/Check_Argmentation')
+    dir_save_Argmentation = Path(f'tmp/Check_Argmentation_{arg_flag}')
     dir_save_Argmentation.mkdir(exist_ok=True, parents=True)
 
     # ------------------------------------------------------
@@ -236,10 +237,10 @@ def train_net(net,
     # 5. Begin training
     best_loss_init = 1e3
     best_dice_init = 0
-    patience = 50
+    patience = 30
     trigger_times = 0
     metric = metric
-    warmup_epochs = 30
+    warmup_epochs = 10
     start_time = time.time()
     for epoch in range(epochs):
         net.train()
