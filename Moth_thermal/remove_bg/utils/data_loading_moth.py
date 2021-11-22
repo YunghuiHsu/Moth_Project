@@ -34,11 +34,11 @@ def img_aug_shape(img: np.ndarray, mask):
     aug_seq = iaa.Sequential([
         # rotate by -degrees to +degrees
         iaa.Affine(rotate=random.uniform(-1, 1)*15, cval=cval),
-        iaa.Affine(shear=random.uniform(-1, 1)*5, cval=cval),
+        iaa.Affine(shear=random.uniform(-1, 1)*10, cval=cval),
         # scale images to 90-110% of their size, individually per axis
-        iaa.Affine(scale=random.uniform(*[0.95, 1.05]), cval=cval),
+        iaa.Affine(scale=random.uniform(*[0.9, 1.1]), cval=cval),
         iaa.Affine(translate_percent=random.uniform(
-            *[-0.05, 0.05]), cval=cval),
+            *[-0.1, 0.1]), cval=cval),
         # # Apply random four point perspective transformations to images.
         # iaa.PerspectiveTransform(scale=random.uniform(*[0.001, 0.05])),
         # # Distort images locally by moving points around
@@ -55,12 +55,16 @@ def img_aug_noise(img: np.ndarray):
     img.shape == (n, h, w, c) or (h, w) and img.dtype : uint8
     '''
     aug_seq = iaa.SomeOf((1, None), [
+        # Degrade the quality of images by JPEG-compressing them.
+        iaa.JpegCompression(compression=(0, 10)),
+        # Add gaussian noise to an image, sampled channelwise from N(0, 0.2*255)
+        iaa.AdditiveGaussianNoise(scale=(0, 0.2*255), per_channel=True),
         # add coarse(rectangle shape) noise
         # size_percent : drop them on an image with min - max% percent of the original size
         iaa.CoarseDropout(
-            p=(0.01, 0.05), size_percent=(0.02, 0.2), per_channel=False),
-        # Add gaussian noise to an image, sampled channelwise from N(0, 0.2*255)
-        iaa.AdditiveGaussianNoise(scale=(0, 0.2*255), per_channel=True),
+            p=(0.02, 0.08), size_percent=(0.02, 0.2), per_channel=False),
+        # Fill one or more rectangular areas in an image using a fill mode.
+        iaa.Cutout(nb_iterations=(10, 30), size=(0.02, 0.08), cval=255, squared=False)
     ])
     img = aug_seq.augment_image(img)
 
@@ -68,14 +72,14 @@ def img_aug_noise(img: np.ndarray):
 
 
 def img_aug_color_contrast(img: np.ndarray):
-    aug_seq = iaa.SomeOf((1, None), [
+    aug_seq = iaa.SomeOf((0, 2), [
         # Multiply all pixels in an image with a specific value, thereby making the image darker or brighter.
-        iaa.Multiply((0.8, 1.2), per_channel=0.05),
+        iaa.Multiply((0.8, 1.1), per_channel=0.33),
         # Multiply hue and saturation by random values between  values
-        iaa.MultiplyHueAndSaturation((0.9, 1.1), per_channel=0.05),
+        iaa.MultiplyHueAndSaturation((0.8, 1.2), per_channel=0.33),
         # alpha-blends the contrast-enhanced augmented images with the original input images using random blend strengths.
-        iaa.Alpha((0.0, 0.5), iaa.AllChannelsHistogramEqualization(),
-                  per_channel=0.05)
+        iaa.Alpha((0.0, 1.0), iaa.AllChannelsHistogramEqualization(),
+                  per_channel=0.33)
     ])
     img = aug_seq.augment_image(img)
     return img
@@ -233,8 +237,8 @@ class MothDataset(Dataset):
             # img.shape == (h, w, c) or (h, w) and img.dtype : uint8
             img_, mask_ = img_aug_shape(img_, mask_)
             img_ = img_aug_color_contrast(img_)
-            img_ = img_aug_noise(img_)
             img_ = img_aug_blur_sharpen(img_)
+            img_ = img_aug_noise(img_)
 
         # ndarray to tensor
         img = self.preprocess(img_, self.input_size, self.output_size, False)
