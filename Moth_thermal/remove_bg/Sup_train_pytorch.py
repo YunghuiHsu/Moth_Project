@@ -97,9 +97,9 @@ dir_mask = Path(args.YY_DIR)
 # ------------------------------------------------------
 # AddBatchArgmentation
 dir_img_arg = Path('../data/data_for_Sup_train/imgs_batch_arg')
-img_arg_paths = list(dir_img_arg.glob('**/*' + 'png'))
+img_arg_paths = list(dir_img_arg.glob('**/*' + '.png'))
 dir_img_arg = Path('../data/data_for_Sup_train/masks_batch_arg')
-masks_arg_paths = list(dir_img_arg.glob('**/*' + 'png'))
+masks_arg_paths = list(dir_img_arg.glob('**/*' + '.png'))
 # ------------------------------------------------------
 
 time_ = datetime.now().strftime("%y%m%d_%H%M")
@@ -376,7 +376,8 @@ def train_net(net,
             # threshold = 0.5
             full_mask = torch.softmax(
                 masks_pred, dim=1).float().clone()
-            full_mask = torch.tensor(full_mask > 0.5).float()[:,1,::]  # (b, c, h, w)
+            full_mask = torch.tensor(full_mask > 0.5).float()[
+                :, 1, ::]  # (b, c, h, w)
 
             logging.info(
                 f'Valid - Dice_score: {val_score:.4f}, Loss:{valid_loss:.4f}')
