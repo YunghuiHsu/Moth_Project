@@ -10,7 +10,7 @@ from PIL import Image, ImageOps
 from skimage.transform import resize
 import cv2
 
-root = Path('../data')
+root = Path('../../data')
 dir_origin = root.joinpath('origin')
 imgs_origin = list(dir_origin.glob('*.png'))
 print(len(imgs_origin))
@@ -165,16 +165,16 @@ print(err_name)
 # 將所有mask [0 or 255], uint8, 單通道(channel=0)的，結合原圖、產出背景為藍色的去背影像
 # ============================================================================================
 
-
 ## dir_mask = './bk_mask_manul/'
 dir_mask = Path(
-    'data\label_waiting_postprocess\mask_waitinting_for_posrprocess\mask_for_rmbg')
+    '../data/data_for_Sup_train/masks_211105')
 
 imgs_mask = list(dir_mask.glob('*.png'))
 print(len(imgs_mask))
 # imgs_mask = [path for path in dir_mask.iterdir() if "_mask" in path.stem]
 
-dir_save = dir_mask.joinpath('mask_rmbg')
+# dir_save = dir_mask.joinpath('mask_rmbg')
+dir_save = Path('tmp/imgs_rmbg')
 dir_save.mkdir(parents=True, exist_ok=True)
 
 
@@ -198,6 +198,16 @@ def img_rmbg_fill(black_mask: np.ndarray, img: np.ndarray, color: str = 'blue'):
 
     img_rmbg_color = ((black_mask/255)*img + color_mask).astype(np.uint8)
     return img_rmbg_color
+
+
+#
+dir_benchmarks = Path('../data/data_for_Sup_predict/benchmarks').glob('*.png')
+names_benchmarks = [path.stem for path in dir_benchmarks]
+len(names_benchmarks)
+
+imgs_mask = [path for path in imgs_mask if path.stem in names_benchmarks]
+len(imgs_mask)
+assert len(names_benchmarks) == len(imgs_mask)
 
 
 for idx, path in enumerate(imgs_mask):
@@ -227,14 +237,15 @@ for idx, path in enumerate(imgs_mask):
     # get image with background removed and fill with specified color
     img_rmbg = img_rmbg_fill(mask3, origin_img, color='blue')
 
-    # save image
-    img_rmbg_name = path.stem.replace('mask', 'rmbg')
+    # # save image
+    # img_rmbg_name = path.stem.replace('mask', 'rmbg')
+    img_rmbg_name = path.stem + '_rmbg'
     save_path_rmbg = dir_save.joinpath(img_rmbg_name + '.png')
     io.imsave(save_path_rmbg, img_rmbg)
     print(idx, img_rmbg_name, 'saved')
 
-    io.imsave(dir_save.joinpath(fname + '.png'), origin_img)
-    print(idx, fname, 'saved')
+    # io.imsave(dir_save.joinpath(fname + '.png'), origin_img)
+    # print(idx, fname, 'saved')
 
 
 # ============================================================================================
@@ -300,13 +311,13 @@ for idx, path in enumerate(imgs_mask):
 # ============================================================================================
 
 
-dir_mask = Path('../data/label_waiting_postprocess/tmp')
+dir_mask = Path('../../data/label_waiting_postprocess/maskUnet_picked')
 
 dir_mask_tmp = dir_mask.joinpath('masks_tmp')
 dir_mask_tmp.mkdir(parents=True, exist_ok=True)
 
 for i, path in enumerate(dir_mask.glob('*.png')):
-    mask_name = path.stem.split('_mask')[0]
+    mask_name = path.stem.split('_cropped')[0] + '_cropped'
     mask_ = io.imread(path, as_gray=True)  # (h,w) uint8
 
     if not mask_.dtype == 'uint8':
@@ -321,11 +332,11 @@ dir_img = dir_mask.joinpath('imgs')
 dir_img.mkdir(exist_ok=True, parents=True)
 
 # ## prepare dir_img by dir_mask
-dir_ori = Path('../data/data_resize_cropped/origin/')
+dir_ori = Path('../../data/origin')
 for i, path in enumerate(dir_mask.iterdir()):
     if not path.name.endswith('.png'):
         continue
-    img_name = path.stem.split('_mask')[0]
+    img_name = path.stem.split('_cropped')[0] + '_cropped'
     origin_file = dir_ori.joinpath(img_name + '.png')
     img = io.imread(origin_file)
     save_path = dir_img.joinpath(img_name + '.png')

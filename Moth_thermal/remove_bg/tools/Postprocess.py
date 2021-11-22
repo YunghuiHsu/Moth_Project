@@ -27,12 +27,12 @@ parser = argparse.ArgumentParser(
 parser.add_argument('--gpu', '-g', dest='gpu', default='0')
 
 # data
-parser.add_argument('--MASKDIR', '-i' , dest='MASKDIR',
-                    default='data/label_waiting_postprocess/mask_waitinting_for_posrprocess/mask_for_postprocess')
-parser.add_argument('--ORIGINDIR', '-o' , dest='ORIGINDIR',
-                    default='../crop/origin')
+parser.add_argument('--MASKDIR', '-i', dest='MASKDIR',
+                    default='../../data/label_waiting_postprocess/mask_waitinting_for_posrprocess/mask_for_postprocess')
+parser.add_argument('--ORIGINDIR', '-o', dest='ORIGINDIR',
+                    default='../../data//origin')
 parser.add_argument('--SAVEDIR', '-s', dest='SAVEDIR',
-                    default='data/postprocessed')
+                    default='../../data/postprocessed')
 # parser.add_argument('--postfix', '-p', dest='postfix', type=str,
 #                     default='_mask', help="postfix of mask file for split out image name ")
 args = parser.parse_args()
@@ -61,6 +61,7 @@ mask_path = MASKDIR.glob('*.png')
 print(len(list(MASKDIR.glob('*.png'))))
 # mask_path = [os.path.join(MASKDIR, i) for i in masks if os.path.splitext(i)[-1].lower() in ['.jpg', '.png', '.jpeg']]
 
+
 def img_rmbg_fill(black_mask: np.ndarray, img: np.ndarray, color: str = 'blue'):
     '''
     color:: 'blue', 'black'.
@@ -87,9 +88,9 @@ for idx, path in enumerate(mask_path):
     # get path
     fname = path.stem.split('_cropped')[0] + '_cropped'
     msk_path = path
-    
+
     # prepare data to [0,255], channel=3
-    img_path = ORIGIN.joinpath(fname + '.png' )
+    img_path = ORIGIN.joinpath(fname + '.png')
     origin_img = io.imread(img_path)
     origin_img = resize(origin_img, (256, 256))
     origin_img_255 = (origin_img)*255
@@ -105,34 +106,34 @@ for idx, path in enumerate(mask_path):
     mask3 = np.stack((mask, mask, mask), axis=2)
 
     # ============================================================================================================================================
-    ## cntr 
-    ## find contour by cv2.findContours(mask), return mask [h,w,3]
+    # cntr
+    # find contour by cv2.findContours(mask), return mask [h,w,3]
     mask_unsup2cntr = find_cntr_condition(
         mask3, condition=62000)             # (h,w,c), uint8
     img_unsup2cntr = img_rmbg_fill(mask_unsup2cntr, origin_img_255)
 
     # ------------------------------------------------------------------------------------------
-    ## crf
-    ## find contour by crf(img, mask), only get from 'R' channel, return mask [h,w,3]
+    # crf
+    # find contour by crf(img, mask), only get from 'R' channel, return mask [h,w,3]
     crf_output = crf(origin_img_255, mask3)
     mask_crf = crf_output[:, :, 0] + mask3[:, :, 0]
     mask_crf = np.repeat(mask_crf, repeats=3).reshape((256, 256, 3))
     img_crf = img_rmbg_fill(mask_crf, origin_img_255, color='blue')
 
     # ------------------------------------------------------------------------------------------
-    ## crf_cntr 
-    ## find contour by cv2.findContours(mask_crf) , return mask [h,w,3]
+    # crf_cntr
+    # find contour by cv2.findContours(mask_crf) , return mask [h,w,3]
     mask_cntr = find_cntr_condition(mask_crf, condition=62000)
     img_crf_cntr = img_rmbg_fill(mask_cntr, origin_img_255, color='blue')
 
     # ------------------------------------------------------------------------------------------
-    ## show unsup+cv2 result
+    # show unsup+cv2 result
     # unsupcv2_img = io.imread(os.path.join(UnsupCV2DIR, fname+'.png'))
 
     # ============================================================================================================================================
-    ## save out
+    # save out
 
-    ## plotting checking.jpg
+    # plotting checking.jpg
     p_img = [origin_img,
              #               unsupcv2_img,
              img_unsup2cntr,
@@ -153,22 +154,21 @@ for idx, path in enumerate(mask_path):
 
     # ------------------------------------------------------------------------------------------
     imgs_dict = {'cntr': img_unsup2cntr,
-            'crf': img_crf,
-            'crf_cntr':img_crf_cntr
-            }
+                 'crf': img_crf,
+                 'crf_cntr': img_crf_cntr
+                 }
     masks_dict = {'cntr': mask_unsup2cntr,
-            'crf': mask_crf,
-            'crf_cntr':mask_cntr
-            }
+                  'crf': mask_crf,
+                  'crf_cntr': mask_cntr
+                  }
 
-
-    for (name_, img_),(_, mask_) in zip(imgs_dict.items(), masks_dict.items()):
+    for (name_, img_), (_, mask_) in zip(imgs_dict.items(), masks_dict.items()):
         save_to = SAVEDIR.joinpath(name_)
-        if idx == 0: 
+        if idx == 0:
             save_to.mkdir(parents=True, exist_ok=True)
         io.imsave(save_to.joinpath(fname + f'_rmbg_{name_}.png'), img_)
         io.imsave(save_to.joinpath(fname + f'_mask_{name_}.png'), mask_)
-    
+
     # print(f'\t{fname}_rmbg_{name_}.png saved')
 
     print(idx, fname, ' saved')
