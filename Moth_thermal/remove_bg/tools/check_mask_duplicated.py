@@ -1,48 +1,46 @@
-from logging import exception
 import os
 import sys
 import glob
 import re
 from pathlib import Path
-from typing import Counter
 import numpy as np
 import skimage.io as io
 from PIL import Image
 import math
 import matplotlib.pyplot as plt
-
+import shutil
 
 # -------------------------------------------------------------------------------------------------
 # find out segmentation for rgb failured
 
-file = 'spot_color'  # 'bk_clear'、'bk_mix'、'bk_lowcontrast'、'spot_color'
+# file = 'spot_color'  # 'bk_clear'、'bk_mix'、'bk_lowcontrast'、'spot_color'
 
-# data_for_Unsup_rmbg
-root_dir = 'data/data_for_Unsup_rmbg'
-dir_for_Unsup = Path(f'{root_dir}/{file}')
-imgs_for_Unsup_name = {path.stem for path in dir_for_Unsup.glob('*.png')}
-print(len(imgs_for_Unsup_name))
+# # data_for_Unsup_rmbg
+# root_dir = 'data/data_for_Unsup_rmbg'
+# dir_for_Unsup = Path(f'{root_dir}/{file}')
+# imgs_for_Unsup_name = {path.stem for path in dir_for_Unsup.glob('*.png')}
+# print(len(imgs_for_Unsup_name))
 
-# # label_waiting_postprocess
-root_dir_rgb = 'data/label_waiting_postprocess/mask_waitinting_for_posrprocess/rgb_background_for_fill'
-dir_rgb = Path(f'{root_dir_rgb}')
-imgs_rgb = list(dir_rgb.glob('*cropped.png'))
-print(len(imgs_rgb))
-imgs_rgb_name = {path.stem
-                 for path in dir_rgb.glob('*cropped.png')}
-print(len(imgs_rgb_name))
+# # # label_waiting_postprocess
+# root_dir_rgb = 'data/label_waiting_postprocess/mask_waitinting_for_posrprocess/rgb_background_for_fill'
+# dir_rgb = Path(f'{root_dir_rgb}')
+# imgs_rgb = list(dir_rgb.glob('*cropped.png'))
+# print(len(imgs_rgb))
+# imgs_rgb_name = {path.stem
+#                  for path in dir_rgb.glob('*cropped.png')}
+# print(len(imgs_rgb_name))
 
-# # mask_picked
-dir_masks_picked = Path('data/data_for_Sup_train/masks')
-imgs_masks_names = {path.stem for path in dir_masks_picked.glob('*.png')}
-print(len(imgs_masks_names))
+# # # mask_picked
+# dir_masks_picked = Path('data/data_for_Sup_train/masks')
+# imgs_masks_names = {path.stem for path in dir_masks_picked.glob('*.png')}
+# print(len(imgs_masks_names))
 
-save_dir = Path(f'./data/tmp/{file}_failure')
-save_dir.mkdir(parents=True, exist_ok=True)
+# save_dir = Path(f'./data/tmp/{file}_failure')
+# save_dir.mkdir(parents=True, exist_ok=True)
 
-imgs_failure_name = imgs_for_Unsup_name - imgs_rgb_name - imgs_masks_names
-print(len(imgs_failure_name))
-assert len(imgs_for_Unsup_name) - len(imgs_rgb_name) == len(imgs_failure_name)
+# imgs_failure_name = imgs_for_Unsup_name - imgs_rgb_name - imgs_masks_names
+# print(len(imgs_failure_name))
+# assert len(imgs_for_Unsup_name) - len(imgs_rgb_name) == len(imgs_failure_name)
 
 # for idx, img_name in enumerate(imgs_for_Unsup_name):
 #     if img_name not in imgs_failure_name:
@@ -52,54 +50,53 @@ assert len(imgs_for_Unsup_name) - len(imgs_rgb_name) == len(imgs_failure_name)
 #     io.imsave(save_dir.joinpath(img_name + '.png',img)
 #     print(idx, img_name)
 
-for idx, img_name in enumerate(imgs_failure_name):
-    path = dir_for_Unsup.joinpath(img_name + '.png')
-    img = io.imread(path)
-    io.imsave(save_dir.joinpath(img_name + '.png'), img)
-    print(idx, img_name)
+# for idx, img_name in enumerate(imgs_failure_name):
+#     path = dir_for_Unsup.joinpath(img_name + '.png')
+#     img = io.imread(path)
+#     io.imsave(save_dir.joinpath(img_name + '.png'), img)
+#     print(idx, img_name)
 
 # =================================================================================================================
 
 # ------------------------------------------------------------------------------------------------
 # exclude mask picked
 
-
 # imgs need for checked
-# file = 'bk_mix'  # 'bk_clear'、'bk_mix'、'bk_lowcontrast'
-# dir_rgb = Path(
-#     f'data/label_waiting_postprocess/mask_waitinting_for_posrprocess/rgb_background_for_fill/{file}')
+dir_mask_waiting = Path(f'../../data/label_waiting_postprocess')
 
-# dir_target = Path('../crop/origin')
-# imgs_target = list(dir_target.glob('*.png'))
-# print('imgs_target : ', len(imgs_target))
-# imgs_target_name = {path.stem for path in imgs_target}
-# print('imgs_target_name : ',len(imgs_target_name))
+# data\data_for_Sup_predict\SJRS_for_predict、SJRS_for_predict、MCTT_for_predict
+file = 'SJRS_for_predict'
+dir_target = Path(f'../../data/data_for_Sup_predict/{file}')
+imgs_target = list(dir_target.glob('*.png'))
+print('imgs_target : ', len(imgs_target))
+imgs_target_name = {path.stem for path in imgs_target}
+print('imgs_target_name : ',len(imgs_target_name))
 
-# # mask_picked
-# dir_masks_picked = Path('data/data_for_Sup_train/masks')
-# imgs_masks_names = {path.stem for path in dir_masks_picked.glob('*.png')}
-# print('imgs_masks : ', len(imgs_masks_names))
 
-# inter = set(imgs_target_name) & set(imgs_masks_names)
-# except_ = set(imgs_target_name) - set(imgs_masks_names)
-# # print(len(inter), ':', inter)
-# print('imgs_target - imgs_masks :', len(except_))
+# mask_picked
+dir_masks_picked = Path('../../data/data_for_Sup_train/masks_211122')
+imgs_masks_names = {path.stem for path in dir_masks_picked.glob('*.png')}
+print('imgs_masks : ', len(imgs_masks_names))
 
-# # save_dir = Path(f'data/tmp/target_tmp')
-# save_dir = Path(f'data/data_for_Sup_predict')
+inter_ = set(imgs_target_name) & set(imgs_masks_names)
+except_ = set(imgs_target_name) - set(imgs_masks_names)
+print('imgs_target & imgs_masks :', len(inter_))
+print('imgs_target - imgs_masks :', len(except_))
+
+# save_dir = Path(f'data/tmp/target_tmp')
+# save_dir = Path(f'../../data/data_for_Sup_predict/{file}')
 # save_dir.mkdir(parents=True, exist_ok=True)
 
-
-# c = 1
-# for idx, path in enumerate(imgs_target):
-#     img_name = path.name.split('。')[0].split('-')[0].split('.')[0]
-#     if img_name in imgs_masks_names:
-#         # print(f'\t{i:3d}, {img_name} will not save')
-#         continue
-#     img = io.imread(path)
-#     Image.fromarray(img).save(save_dir.joinpath(path.name))
-#     print(f'{idx:3d}, {c}, {img_name} saved')
-#     c += 1
+error_name = {}
+for idx, img_name in enumerate(inter_):
+    # img_name = path.name.split('。')[0].split('-')[0].split('.')[0]
+    path = dir_target.joinpath(img_name + '.png')
+    try:
+        path.unlink()
+    except OSError as e:
+        print(f"Error:{ e.strerror}")
+        error_name[idx] = img_name
+    print(f'{idx:3d}, {img_name} deleted')
 
 # =================================================================================================
 # Transform img_rmbg from mask
@@ -159,4 +156,4 @@ for idx, name in enumerate(masks_name):
     io.imsave(dir_target.joinpath(name + '.png'), img_)
     io.imsave(dir_target.joinpath(name + '_UnetRmbg.png'), img_rmgb)
     print(f'{idx:4d}, {name} saved')
-
+# =================================================================================================
