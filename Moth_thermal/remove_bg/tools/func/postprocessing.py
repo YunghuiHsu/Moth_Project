@@ -91,7 +91,12 @@ def find_cntr_condition(cv2_img, condition=0):
     img = cv2.merge([r,g,b])
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     _,th2 = cv2.threshold(gray,10,1,cv2.THRESH_BINARY)
-    im2, contours, hierarchy = cv2.findContours(th2,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_NONE)
+    
+    try:
+        im2, contours, hierarchy = cv2.findContours(th2,cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)  # opencv4.x
+    except:
+        contours, hierarchy = cv2.findContours(th2,cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)       # opencv3.x
+        
     areas = [cv2.contourArea(contour) for contour in contours]
     #print(areas)
     if max(areas) > condition: ### remove black frame, if higher than this value,it means it get the black frame
