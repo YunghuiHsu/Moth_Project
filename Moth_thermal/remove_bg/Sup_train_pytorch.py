@@ -76,8 +76,10 @@ parser.add_argument('--loss_metric', '-m', dest='loss_metric',
                     help="Loss fuction goal: maximize Dice score > 'max' / minimize Valid Loss > 'min'")
 parser.add_argument("--pretrained", '-p', default="",
                     type=str, help="path to pretrained model (default: none)")
-parser.add_argument("--imgBatchArgMode", '-a', default='random',
-                    type=str, help='Image Batch Argmentaion mode: "single", "multi", "random", "mix" in ImgBatchAugmentSampler')
+parser.add_argument("--imgBatchArgMode", '-a', default='random', type=str,
+                    help='Image Batch Argmentaion mode: "single", "multi", "random", "mix" in ImgBatchAugmentSampler. \
+                        \nIf you launch imgBatchArgMode, you need prepared data which you want batchArgmentation in \
+                        data_for_Sup_train/imgs_batch_arg, masks_batch_arg ')
 
 
 # return parser.parse_args()
@@ -177,6 +179,9 @@ def train_net(net,
         imgs_arg_paths = list(dir_imgs_arg.glob('**/*' + 'png'))
         dir_masks_arg = Path('../data/data_for_Sup_train/masks_batch_arg')
         masks_arg_paths = list(dir_masks_arg.glob('**/*' + 'png'))
+
+        assert dir_masks_arg.exists() and dir_imgs_arg.exists(), f'\
+            if you launch imgBatchArgMode, you need prepared data which you want batchArgmentation in {str(dir_imgs_arg)} and {str(dir_masks_arg)}'
         assert len(imgs_arg_paths) == len(
             masks_arg_paths), f'number of imgs_arg: {len(imgs_arg_paths)} and masks_arg: {len(masks_arg_paths)} need equal '
 
