@@ -267,12 +267,12 @@ def train_net(net,
 
         # ------------------------------------------------------------------------------------------
         # learning rate warmup(optional)
-        if (args.pretrained and epoch==0) or (epoch == warmup_epochs):
+        if (epoch == warmup_epochs) or (args.pretrained and epoch==0):
             optimizer = optim.AdamW(
                 net.parameters(), lr=args.lr, weight_decay=1e-3)
             scheduler = optim.lr_scheduler.ReduceLROnPlateau(
                 optimizer, metric, patience=15)
-        elif epoch < warmup_epochs:
+        elif (epoch < warmup_epochs) and (not args.pretrained):
             print(f'\n lr waruping')
             warmup_percent_done = epoch/warmup_epochs
             # gradual warmup_lr
