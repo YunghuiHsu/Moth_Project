@@ -1,4 +1,3 @@
-
 import argparse
 import logging
 import sys
@@ -42,7 +41,7 @@ parser.add_argument("--save_epoch", '-save_e', type=int,
 parser.add_argument('--XX_DIR', dest='XX_DIR', type=str,
                     default='../data/data_for_Sup_train/imgs')
 parser.add_argument('--YY_DIR', dest='YY_DIR', type=str,
-                    default='../data/data_for_Sup_train/masks_211105')
+                    default='../data/data_for_Sup_train/masks')
 parser.add_argument('--SAVEDIR', dest='SAVEDIR', type=str,
                     default='model/Unet_rmbg')  # Unet_rmbg
 
@@ -75,49 +74,48 @@ parser.add_argument('--contour_weight', '-w', dest='contour_weight',
 parser.add_argument('--loss_metric', '-m', dest='loss_metric',
                     metavar='Metric', type=str, default='max',
                     help="Loss fuction goal: maximize Dice score > 'max' / minimize Valid Loss > 'min'")
+parser.add_argument("--pretrained", '-p', default="",
+                    type=str, help="path to pretrained model (default: none)")
+parser.add_argument("--imgBatchArgMode", '-a', default='random',
+                    type=str, help='Image Batch Argmentaion mode: "single", "multi", "random", "mix" in ImgBatchAugmentSampler')
 
 
 # return parser.parse_args()
 args = parser.parse_args()
+
 # =======================================================================================================
+
+# Save log
+
+
+def save_log():
+    summary_save = f'{args.SAVEDIR}/training_summary_pytorch.csv'
+
+    # save into dictionary
+    sav = vars(args)
+    # sav['test_loss'] = test_loss
+    # sav['Dice loss'] = mIoU
+    sav['dir_checkpoint'] = dir_checkpoint
+    sav['validation Dice'] = best_dice_score
+    sav['best_val_loss'] = best_val_loss
+    sav['best_epoch'] = best_epoch
+
+    # Append into summary files
+    dnew = pd.DataFrame(sav, index=[0])
+    if os.path.exists(summary_save):
+        dori = pd.read_csv(summary_save)
+        dori = pd.concat([dori, dnew])
+        dori.to_csv(summary_save, index=False)
+    else:
+        dnew.to_csv(summary_save, index=False)
+
+    print(f'\n{summary_save} saved!')
 
 
 def size_str_tuple(input):
     str_ = input.replace(' ', '').split(',')
     h, w = int(str_[0]), int(str_[1])
     return h, w
-
-
-input_size = size_str_tuple(args.size_in)
-output_size = size_str_tuple(args.size_out)
-
-dir_img = Path(args.XX_DIR)
-dir_mask = Path(args.YY_DIR)
-
-# ------------------------------------------------------
-# AddBatchArgmentation
-dir_img_arg = Path('../data/data_for_Sup_train/imgs_batch_arg')
-img_arg_paths = list(dir_img_arg.glob('**/*' + '.png'))
-dir_img_arg = Path('../data/data_for_Sup_train/masks_batch_arg')
-masks_arg_paths = list(dir_img_arg.glob('**/*' + '.png'))
-# ------------------------------------------------------
-
-time_ = datetime.now().strftime("%y%m%d_%H%M")
-dir_checkpoint = Path(f'{args.SAVEDIR}/{time_}')
-# dir_checkpoint = Path(f'./checkpoints/{time_}')
-dir_checkpoint.mkdir(parents=True, exist_ok=True)
-
-
-# ------------------------------------------------------
-# for test
-# img_type = '.png'
-# val_percent = 0.1
-# batch_size = 8
-# learning_rate = 1e-3
-# device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-# net = UNet(n_channels=args.image_channel, n_classes=2, bilinear=True)
-# net.to(device=device)
-# ------------------------------------------------------
 
 
 def train_net(net,
@@ -132,10 +130,14 @@ def train_net(net,
               img_type: str = '.png',
               amp: bool = False,
               metric: str = 'max',
-              contour_weight: int = 3
+              contour_weight: int = 3,
+              arg_flag: str = args.imgBatchArgMode
               ):
 
     # Prepare dataset, Split into train / validation partitions
+
+    dir_img = Path(args.XX_DIR)
+    dir_mask = Path(args.YY_DIR)
     img_paths = list(dir_img.glob('**/*' + img_type))
     mask_paths = list(dir_mask.glob('**/*' + img_type))
 
@@ -153,36 +155,45 @@ def train_net(net,
         img_paths, mask_paths, test_size=val_percent, random_state=1,
         stratify=df.label if not args.stratify_off else None)
 
-    # train_set = MothDataset(
-    #     X_train, y_train, input_size=input_size, output_size=output_size, img_aug=True)
+    train_set = MothDataset(
+        X_train, y_train, input_size=input_size, output_size=output_size, img_aug=True)
     val_set = MothDataset(
         X_valid, y_valid, input_size=input_size, output_size=output_size, img_aug=False)
 
     n_val = len(val_set)
-    # n_train = len(train_set)
+    n_train = len(train_set)
 
     # Create data loaders
     loader_args = dict(batch_size=batch_size, num_workers=2,
                        pin_memory=True, drop_last=True)
-    # train_loader = DataLoader(train_set, shuffle=True, **loader_args)
+    train_loader = DataLoader(train_set, shuffle=True, **loader_args)
     val_loader = DataLoader(val_set, shuffle=False, **loader_args)
 
     # ------------------------------------------------------
-    # AddBatchArgmentation
-    X_train_arg = X_train + img_arg_paths
-    y_train_arg = y_train + masks_arg_paths
-    size_X_train = len(X_train)
+    # AddBatchArgmentation(optional)
 
-    # Sampler : single, multi, random, mix
-    arg_flag = 'mix'
-    batchsampler = ImgBatchAugmentSampler(
-        X_train_arg, size_X_train, batch_size, flag=arg_flag, sample_factor=1.0)
+    if arg_flag:
+        dir_imgs_arg = Path('../data/data_for_Sup_train/imgs_batch_arg')
+        imgs_arg_paths = list(dir_imgs_arg.glob('**/*' + 'png'))
+        dir_masks_arg = Path('../data/data_for_Sup_train/masks_batch_arg')
+        masks_arg_paths = list(dir_masks_arg.glob('**/*' + 'png'))
+        assert len(imgs_arg_paths) == len(
+            masks_arg_paths), f'number of imgs_arg: {len(imgs_arg_paths)} and masks_arg: {len(masks_arg_paths)} need equal '
 
-    train_set = MothDataset(
-        X_train_arg, y_train_arg, input_size=input_size, output_size=output_size, img_aug=True)
-    train_loader = DataLoader(
-        train_set, batch_sampler=batchsampler, num_workers=2, pin_memory=True)
-    n_train = len(train_set)
+        X_train_arg = X_train + imgs_arg_paths
+        y_train_arg = y_train + masks_arg_paths
+        size_X_train = len(X_train)
+
+        # Sampler : single, multi, random, mix
+        batchsampler = ImgBatchAugmentSampler(
+            X_train_arg, size_X_train, batch_size, flag=arg_flag, sample_factor=1.0 if arg_flag == 'random' else 3.0)
+
+        train_set = MothDataset(
+            X_train_arg, y_train_arg, input_size=input_size, output_size=output_size, img_aug=True)
+        train_loader = DataLoader(
+            train_set, batch_sampler=batchsampler, num_workers=2, pin_memory=True)
+        n_train = len(train_set)
+
     n_iter = len(train_loader)*batch_size
 
     dir_save_Argmentation = Path(f'tmp/Check_Argmentation_{arg_flag}')
@@ -214,7 +225,7 @@ def train_net(net,
     # optimizer =  optim.AdamW(net.parameters(), lr=learning_rate, weight_decay=1e-2)
     optimizer = optim.Adam(net.parameters(), lr=learning_rate)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, metric, patience=20)  # goal: maximize Dice score > 'max' / minimize Valid Loss > 'min'
+        optimizer, metric, patience=10)  # goal: maximize Dice score > 'max' / minimize Valid Loss > 'min'
 
     # grad_scaler = torch.cuda.amp.GradScaler(enabled=amp)
     # criterion = nn.CrossEntropyLoss()
@@ -237,7 +248,7 @@ def train_net(net,
     # 5. Begin training
     best_loss_init = 1e3
     best_dice_init = 0
-    patience = 30
+    patience = 20
     trigger_times = 0
     metric = metric
     warmup_epochs = 10
@@ -400,7 +411,7 @@ def train_net(net,
 
             # ------------------------------------------------------
             # Check Argmentaion and  Predict satatus
-            if epoch % 5 == 0:
+            if epoch % 10 == 0:
                 vutils.save_image(
                     torch.cat([
                         images,
@@ -447,40 +458,21 @@ def train_net(net,
             print('\nTrigger Early stopping!')
             break
 
-# Save log
-
-
-def save_log():
-    summary_save = f'{args.SAVEDIR}/training_summary_pytorch.csv'
-
-    # save into dictionary
-    sav = vars(args)
-    # sav['test_loss'] = test_loss
-    # sav['Dice loss'] = mIoU
-    sav['dir_checkpoint'] = dir_checkpoint
-    sav['validation Dice'] = best_dice_score
-    sav['best_val_loss'] = best_val_loss
-    sav['best_epoch'] = best_epoch
-
-    # Append into summary files
-    dnew = pd.DataFrame(sav, index=[0])
-    if os.path.exists(summary_save):
-        dori = pd.read_csv(summary_save)
-        dori = pd.concat([dori, dnew])
-        dori.to_csv(summary_save, index=False)
-    else:
-        dnew.to_csv(summary_save, index=False)
-
-    print(f'\n{summary_save} saved!')
 
 # ============================================================================================================================
-
 
 if __name__ == '__main__':
     # return parser
     # args = get_args()
     # set GPU
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
+
+    input_size, output_size = size_str_tuple(
+        args.size_in), size_str_tuple(args.size_out)
+
+    time_ = datetime.now().strftime("%y%m%d_%H%M")
+    dir_checkpoint = Path(f'{args.SAVEDIR}/{time_}')
+    dir_checkpoint.mkdir(parents=True, exist_ok=True)
 
     logging.basicConfig(level=logging.INFO,
                         format='%(levelname)s: %(message)s')
@@ -491,17 +483,20 @@ if __name__ == '__main__':
     # n_channels=3 for RGB images
     # n_classes is the number of probabilities you want to get per pixel
     net = UNet(n_channels=args.image_channel, n_classes=2, bilinear=True)
+    net.to(device=device)
+
+    # whether train from scratch
+    if args.pretrained:  # '' : False
+        logging.info(f'Model loaded from {args.pretrained}')
+        weights = torch.load(args.pretrained, map_location=device)
+        net.load_state_dict(weights)
+    else:
+        logging.info('train from scratch')
 
     logging.info(f'Network:\n'
                  f'\t{net.n_channels} input channels\n'
                  f'\t{net.n_classes} output channels (classes)\n'
                  f'\t{"Bilinear" if net.bilinear else "Transposed conv"} upscaling')
-
-    if args.load:
-        net.load_state_dict(torch.load(args.load, map_location=device))
-        logging.info(f'Model loaded from {args.load}')
-
-    net.to(device=device)
     try:
         train_net(net=net,
                   epochs=args.epochs,
@@ -514,7 +509,8 @@ if __name__ == '__main__':
                   img_type=args.img_type,
                   amp=args.amp,
                   metric=args.loss_metric,
-                  contour_weight=args.contour_weight
+                  contour_weight=args.contour_weight,
+                  arg_flag=args.imgBatchArgMode
                   )
         save_log()
     except KeyboardInterrupt:
