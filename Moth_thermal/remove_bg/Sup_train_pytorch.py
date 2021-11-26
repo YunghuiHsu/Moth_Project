@@ -45,9 +45,9 @@ parser.add_argument('--YY_DIR', dest='YY_DIR', type=str,
 parser.add_argument('--SAVEDIR', dest='SAVEDIR', type=str,
                     default='model/Unet_rmbg')  # Unet_rmbg
 
-parser.add_argument('--image_input_size', '-s_in', dest='size_in',
+parser.add_argument('--input_size', '-s_in', dest='size_in',
                     type=str, default='256,256', help='image size input')
-parser.add_argument('--image_output_size', '-s_out', dest='size_out',
+parser.add_argument('--output_size', '-s_out', dest='size_out',
                     type=str, default='256,256', help='image size output')
 parser.add_argument('--image_channel', '-c', dest='image_channel',
                     metavar='Channel', default=3, type=int, help='channel of image input')
@@ -127,9 +127,6 @@ def train_net(net,
               learning_rate: float = 0.001,
               val_percent: float = 0.2,
               save_checkpoint: bool = True,
-              input_size: tuple = (256, 256),
-              output_size: tuple = (256, 256),
-              img_type: str = '.png',
               amp: bool = False,
               metric: str = 'max',
               contour_weight: int = 3,
@@ -140,8 +137,8 @@ def train_net(net,
 
     dir_img = Path(args.XX_DIR)
     dir_mask = Path(args.YY_DIR)
-    img_paths = list(dir_img.glob('**/*' + img_type))
-    mask_paths = list(dir_mask.glob('**/*' + img_type))
+    img_paths = list(dir_img.glob('**/*' + args.img_type))
+    mask_paths = list(dir_mask.glob('**/*' + args.img_type))
 
     assert len(img_paths) == len(
         mask_paths), f'number imgs: {len(img_paths)} and masks: {len(mask_paths)} need equal '
@@ -158,9 +155,9 @@ def train_net(net,
         stratify=df.label if not args.stratify_off else None)
 
     train_set = MothDataset(
-        X_train, y_train, input_size=input_size, output_size=output_size, img_aug=True)
+        X_train, y_train, input_size=args.size_in, output_size=args.size_out, img_aug=True)
     val_set = MothDataset(
-        X_valid, y_valid, input_size=input_size, output_size=output_size, img_aug=False)
+        X_valid, y_valid, input_size=args.size_in, output_size=args.size_out, img_aug=False)
 
     n_val = len(val_set)
     n_train = len(train_set)
@@ -176,14 +173,20 @@ def train_net(net,
 
     if arg_flag:
         dir_imgs_arg = Path('../data/data_for_Sup_train/imgs_batch_arg')
-        imgs_arg_paths = list(dir_imgs_arg.glob('**/*' + 'png'))
+        imgs_arg_paths = list(dir_imgs_arg.glob('**/*' + args.img_type))
         dir_masks_arg = Path('../data/data_for_Sup_train/masks_batch_arg')
-        masks_arg_paths = list(dir_masks_arg.glob('**/*' + 'png'))
+        masks_arg_paths = list(dir_masks_arg.glob('**/*' + args.img_type))
 
         assert dir_masks_arg.exists() and dir_imgs_arg.exists(), f'\
             if you launch imgBatchArgMode, you need prepared data which you want batchArgmentation in {str(dir_imgs_arg)} and {str(dir_masks_arg)}'
         assert len(imgs_arg_paths) == len(
-            masks_arg_paths), f'number of imgs_arg: {len(imgs_arg_paths)} and masks_arg: {len(masks_arg_paths)} need equal '
+            masks_arg_paths), f'number of imgs_arg: {len(imgs_arg_paths)} and masks_arg: {len(masks_arg_paths)} need equal'
+
+        val_name = [path.stem for path in X_valid]
+        imgs_arg_paths = [
+            path for path in imgs_arg_paths if path.stem not in val_name]
+        masks_arg_paths = [
+            path for path in masks_arg_paths if path.stem not in val_name]
 
         X_train_arg = X_train + imgs_arg_paths
         y_train_arg = y_train + masks_arg_paths
@@ -194,7 +197,7 @@ def train_net(net,
             X_train_arg, size_X_train, batch_size, flag=arg_flag, sample_factor=1.0 if arg_flag == 'random' else 3.0)
 
         train_set = MothDataset(
-            X_train_arg, y_train_arg, input_size=input_size, output_size=output_size, img_aug=True)
+            X_train_arg, y_train_arg, input_size=args.size_in, output_size=args.size_out, img_aug=True)
         train_loader = DataLoader(
             train_set, batch_sampler=batchsampler, num_workers=2, pin_memory=True)
         n_train = len(train_set)
@@ -210,7 +213,7 @@ def train_net(net,
     experiment = wandb.init(project='U-Net_MothThermal_AddBatchArgmentationTest',
                             resume='allow', anonymous='must')
     experiment.config.update(dict(epochs=epochs, batch_size=batch_size, learning_rate=learning_rate,
-                                  val_percent=val_percent, save_checkpoint=save_checkpoint, input_size=input_size, output_size=output_size,
+                                  val_percent=val_percent, save_checkpoint=save_checkpoint, input_size=args.size_in, output_size=args.size_out,
                                   amp=amp))
 
     logging.info(f'''Starting training:
@@ -221,8 +224,8 @@ def train_net(net,
         Validation size: {n_val}
         Checkpoints:     {save_checkpoint}
         Device:          {device}
-        input_size:      {input_size}
-        output_size:     {output_size}
+        input_size:      {args.size_in}
+        output_size:     {args.size_out}
         Mixed Precision: {amp}
     ''')
 
@@ -253,7 +256,7 @@ def train_net(net,
     # 5. Begin training
     best_loss_init = 1e3
     best_dice_init = 0
-    patience = 20
+    patience = 30
     trigger_times = 0
     metric = metric
     warmup_epochs = 10
@@ -509,10 +512,7 @@ if __name__ == '__main__':
                   batch_size=args.batch_size,
                   learning_rate=args.lr,
                   device=device,
-                  input_size=input_size,
-                  output_size=output_size,
                   val_percent=args.val / 100,
-                  img_type=args.img_type,
                   amp=args.amp,
                   metric=args.loss_metric,
                   contour_weight=args.contour_weight,
