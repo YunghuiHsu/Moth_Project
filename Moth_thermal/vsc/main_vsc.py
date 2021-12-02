@@ -89,7 +89,6 @@ parser.add_argument('--manualSeed', type=int, help='manual seed')
 #parser.add_argument("--pretrained", default='../vsc_wwlep_glance/model/vsc/model_local_epoch_3000_iter_0.pth', type=str, help="path to pretrained model (default: none)")
 
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
 # =======================================================================================================================
 
 
@@ -146,7 +145,7 @@ def record_image(writer, image_list, cur_iter):
         image_to_show, nrow=opt.nrow), cur_iter)
 
 
-def save_log(log_save_path, epoch, am_rec, am_prior, cur_iter):
+def save_log(log_save_path, epoch, am_rec, am_prior, cur_iter: int = 0):
     with open(log_save_path, 'a') as loss_log:
         loss_log.write(
             ",".join([
@@ -160,9 +159,32 @@ def save_log(log_save_path, epoch, am_rec, am_prior, cur_iter):
         )
 
 
+def plot_rec_images(real: torch.tensor, rec: torch.tensor, fake: torch.tensor,
+                    flag: str = 'train', resize: int = 128, save: bool = True):
+
+    if flag == 'train':
+        images_stack = torch.cat(
+            [real[:2*(opt.nrow)], rec[:2*(opt.nrow)], fake[:2*(opt.nrow)]], dim=0).data.cpu()
+        save_path = f'{opt.outf}/vsc/image_epoch{epoch:05d}.jpg'
+        save_path_up = f'{opt.outf}/image_up_to_date.jpg'
+    elif flag == 'valid':
+        images_stack = torch.cat([real, rec], dim=0).data.cpu()
+        save_path = f'{opt.outf}/vsc_valid/benchmarks_epoch{epoch:05d}.jpg'
+
+    images_stack = torchvision.transforms.Resize(
+        resize)(images_stack) if resize else images_stack
+
+    if save:
+        vutils.save_image(images_stack, save_path, nrow=opt.nrow)
+        if flag == 'train':
+            vutils.save_image(images_stack, save_path_up, nrow=opt.nrow)
+
+    return images_stack
+
+
 def main():
 
-    global opt, vsc_model
+    global opt, vsc_model, epoch 
     opt = parser.parse_args()
     print(opt)
 
@@ -183,6 +205,8 @@ def main():
 
     # if torch.cuda.is_available() and not opt.cuda:
     #     print("WARNING: You have a CUDA device, so you should probably run with --cuda")
+
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0,1" if opt.parallel else "1"
 
     # --------------build VSC models -------------------------
     if opt.parallel:
@@ -296,25 +320,11 @@ def main():
 
         am_prior.update(loss_prior.item())
 
-        # try:
-        #     am_levelN.update(loss_feature_levelN.item())
-        # except:
-        #     am_levelN.update(0)
-
         info += f'| Rec: {am_rec.val:.4f}({am_rec.avg:.4f}), Prior: {am_prior.val:.4f}({am_prior.avg:.4f})'
         print(info, end='\r')
 
         if cur_iter % opt.test_iter is 0:
             pass
-        #     images_stack = torch.cat(
-        #         [real[:(opt.nrow)], rec[:(opt.nrow)], fake[:(opt.nrow)]], dim=0)
-        #     images_stack_resized = torchvision.transforms.Resize(
-        #         128)(images_stack)
-
-        #     vutils.save_image(images_stack_resized.data.cpu(),
-        #                       f'{opt.outf}/vsc/image128_epoch{epoch}_i{cur_iter}.jpg',
-        #                       nrow=opt.nrow)
-        #     save_log(log_save_path, epoch, am_rec, am_prior, cur_iter)
 
         elif cur_iter % 100 is 0:
             pass
@@ -322,45 +332,20 @@ def main():
         elif (cur_iter + 1) % len(data_loader) is 0:
             save_log(log_save_path, epoch, am_rec, am_prior, cur_iter)
 
-            images_stack = torch.cat(
-                [real[:(opt.nrow)], rec[:(opt.nrow)], fake[:(opt.nrow)]], dim=0)
-            images_stack_resized = torchvision.transforms.Resize(
-                128)(images_stack)
-
-            vutils.save_image(
-                images_stack_resized.data.cpu(),
-                f'{opt.outf}/vsc/image128_epoch{epoch:05d}.jpg',
-                nrow=opt.nrow)
-            vutils.save_image(
-                images_stack_resized.data.cpu(),
-                f'{opt.outf}/image128_up_to_date.jpg',
-                nrow=opt.nrow)
-
-            wandb.log({
-                'images': wandb.Image(images_stack_resized, caption="1st row: Real, 2nd row: Rec, 3nd row: Fake"),
-            })
+        return real, rec, fake
 
     # ----------------Train func
+
     def valid_vsc(epoch, batch):
 
         with torch.no_grad():
             real = Variable(batch).cuda()
             real_mu, real_logvar, real_logspike, z, rec = vsc_model(real)
 
-            image_valid_stack = torch.cat([real, rec], dim=0)
-            image_valid_stack_resized = torchvision.transforms.Resize(
-                128)(image_valid_stack)
-
-            vutils.save_image(
-                image_valid_stack_resized.data.cpu(),
-                f'results/vsc_valid/image128_epoch_{epoch:05d}.jpg',
-                nrow=opt.nrow)
-
-            wandb.log({
-                'Benchmarks': wandb.Image(image_valid_stack_resized, caption="Upper row: Real; Lower row: Rec"),
-            })
+            return real, rec
 
     # =======================================================================================================================
+
     # --------------Initialize logging------------
     experiment = wandb.init(
         project='Autoencoder_VSC_Moth_ThermalRangeSize', resume='allow')
@@ -401,7 +386,8 @@ def main():
         vsc_model.train()
         for iteration, (batch, denoised_batch, filenames) in enumerate(data_loader, 0):
 
-            train_vsc(epoch, iteration, batch, denoised_batch, cur_iter)
+            real, rec, fake = train_vsc(
+                epoch, iteration, batch, denoised_batch, cur_iter)
             cur_iter += 1
 
         print(f'\n=========> Train round finished. Starting evaluation round ===========')
@@ -419,16 +405,41 @@ def main():
         for iteration, (batch, denoised_batch, filenames) in enumerate(valid_data_loader, 0):
 
             print('=========> Validating...')
-            valid_vsc(epoch, batch)
+            real_valid, rec_valid = valid_vsc(epoch, batch)
 
+        print('=========> wandb logging...')
+        # save logs
         experiment.log({
             'epoch': epoch,
             'loss_rec':  am_rec.avg,
             'loss_prior': am_prior.avg,
             'learning rate_Encoder': optimizerE.param_groups[0]['lr'],
             'learning rate_Generator': optimizerG.param_groups[0]['lr'],
+            # 'images': wandb.Image(rec_imgs_train, caption="1st row: Real, 2nd row: Rec, 3nd row: Fake"),
+            # 'Benchmarks': wandb.Image(rec_imgs_valid, caption="Upper row: Real; Lower row: Rec"),
             **histograms
         })
+
+        # save rec_imgs
+        if epoch % 5 == 0:
+            rec_imgs_train = plot_rec_images(real, rec, fake, flag='train', resize=128, save=False)
+            rec_imgs_valid = plot_rec_images(
+                real_valid, rec_valid, flag='valid', resize=128, save=False)
+            experiment.log({
+                'images': wandb.Image(rec_imgs_train, caption="1st row: Real, 2nd row: Rec, 3nd row: Fake"),
+                'Benchmarks': wandb.Image(rec_imgs_valid, caption="Upper row: Real; Lower row: Rec")
+            })
+
+        elif epoch < 100 and epoch % 10 == 0:
+            rec_imgs_train = plot_rec_images(
+                real, rec, fake, flag='train', resize="", save=True)
+            rec_imgs_train = plot_rec_images(
+                real_valid, rec_valid, flag='valid', resize="", save=True)
+        elif epoch >= 100 and epoch % 100 == 0:
+            rec_imgs_train = plot_rec_images(
+                real, rec, fake, flag='train', resize="", save=True)
+            rec_imgs_train = plot_rec_images(
+                real_valid, rec_valid, flag='valid', resize="", save=True)
 # =======================================================================================================================
 
 
