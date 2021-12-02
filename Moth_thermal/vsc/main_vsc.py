@@ -52,7 +52,7 @@ parser.add_argument("--start_epoch", default=0, type=int,
                     help="Manual epoch number (useful on restarts)")
 parser.add_argument('--outf', default='results',
                     help='folder to output images and model checkpoints')
-parser.add_argument("--save_iter", type=int, default=1, help="Default=1")
+parser.add_argument("--save_iter", type=int, default=2, help="Default=1")
 parser.add_argument("--test_iter", type=int, default=2000, help="Default=2000")
 parser.add_argument('--nrow', type=int,
                     help='the number of images in each row', default=8)
@@ -83,6 +83,7 @@ parser.add_argument('--beta1', type=float, default=0.9,
 
 # set env
 #parser.add_argument('--cuda', action='store_true', help='enables cuda')
+parser.add_argument('--gpu', '-g', dest='gpu', default='0')
 parser.add_argument('--parallel', action='store_true', default=False,
                     help='for multiple GPUs')
 parser.add_argument('--manualSeed', type=int, help='manual seed')
@@ -121,7 +122,7 @@ def save_checkpoint(model, optims, epoch):
     model_out_path = f"pretrained/vsc_epoch_{epoch}.pth"
     state = {"epoch": epoch, "model": model, "optims": optims}
     torch.save(state, model_out_path)
-    print(f"Checkpoint saved to {model_out_path}")
+    print(f"=========> Checkpoint saved to {model_out_path}")
     return model_out_path
 
 
@@ -159,32 +160,32 @@ def save_log(log_save_path, epoch, am_rec, am_prior, cur_iter: int = 0):
         )
 
 
-def plot_rec_images(real: torch.tensor, rec: torch.tensor, fake: torch.tensor,
-                    flag: str = 'train', resize: int = 128, save: bool = True):
+def log_rec_images(real: torch.tensor, rec: torch.tensor, fake: torch.tensor = None,
+                    flag: str = 'train', resize: int = 128, save: bool = True, return_: bool = False):
 
     if flag == 'train':
         images_stack = torch.cat(
-            [real[:2*(opt.nrow)], rec[:2*(opt.nrow)], fake[:2*(opt.nrow)]], dim=0).data.cpu()
-        save_path = f'{opt.outf}/vsc/image_epoch{epoch:05d}.jpg'
+            [real[:2*(opt.nrow)], rec[:2*(opt.nrow)], fake[:2*(opt.nrow)]], dim=0)
+        save_path = f'{opt.outf}/vsc/image_epoch_{epoch:05d}.jpg'
         save_path_up = f'{opt.outf}/image_up_to_date.jpg'
     elif flag == 'valid':
-        images_stack = torch.cat([real, rec], dim=0).data.cpu()
-        save_path = f'{opt.outf}/vsc_valid/benchmarks_epoch{epoch:05d}.jpg'
+        images_stack = torch.cat([real, rec], dim=0)
+        save_path = f'{opt.outf}/vsc_valid/benchmarks_epoch_{epoch:05d}.jpg'
 
     images_stack = torchvision.transforms.Resize(
         resize)(images_stack) if resize else images_stack
 
     if save:
-        vutils.save_image(images_stack, save_path, nrow=opt.nrow)
+        vutils.save_image(images_stack.data.cpu(), save_path, nrow=opt.nrow)
         if flag == 'train':
-            vutils.save_image(images_stack, save_path_up, nrow=opt.nrow)
-
-    return images_stack
+            vutils.save_image(images_stack.data.cpu(), save_path_up, nrow=opt.nrow)
+    if return_:
+        return images_stack
 
 
 def main():
 
-    global opt, vsc_model, epoch 
+    global opt, vsc_model, epoch
     opt = parser.parse_args()
     print(opt)
 
@@ -206,7 +207,7 @@ def main():
     # if torch.cuda.is_available() and not opt.cuda:
     #     print("WARNING: You have a CUDA device, so you should probably run with --cuda")
 
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0,1" if opt.parallel else "1"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0,1" if opt.parallel else opt.gpu
 
     # --------------build VSC models -------------------------
     if opt.parallel:
@@ -323,26 +324,37 @@ def main():
         info += f'| Rec: {am_rec.val:.4f}({am_rec.avg:.4f}), Prior: {am_prior.val:.4f}({am_prior.avg:.4f})'
         print(info, end='\r')
 
-        if cur_iter % opt.test_iter is 0:
-            pass
-
-        elif cur_iter % 100 is 0:
-            pass
-
-        elif (cur_iter + 1) % len(data_loader) is 0:
-            save_log(log_save_path, epoch, am_rec, am_prior, cur_iter)
-
-        return real, rec, fake
+        # save rec_imgs
+        if epoch % 5 == 0:
+            rec_imgs = log_rec_images(
+                real, rec, fake, flag='train', resize=128, save=False, return_=True)
+            experiment.log({
+                'images': wandb.Image(rec_imgs, caption="1st row: Real, 2nd row: Rec, 3nd row: Fake"),
+            })
+        elif epoch < 100 and epoch % 5 == 0:
+            rec_imgs = log_rec_images(
+                real, rec, fake, flag='train', resize=128, save=True)
+        elif epoch >= 100 and epoch % 100 == 0:
+            rec_imgs = log_rec_images(
+                real, rec, fake, flag='train', resize=128, save=True)
 
     # ----------------Train func
 
     def valid_vsc(epoch, batch):
-
         with torch.no_grad():
             real = Variable(batch).cuda()
-            real_mu, real_logvar, real_logspike, z, rec = vsc_model(real)
+            *_, rec = vsc_model(real)
 
-            return real, rec
+            if epoch % 5 == 0:
+                rec_imgs = log_rec_images(
+                    real, rec, fake=None, flag='valid', resize=128, save=False, return_=True)
+                experiment.log({
+                    'benchmarks': wandb.Image(rec_imgs, caption="1st row: Real, 2nd row: Rec, 3nd row: Fake"),
+                })
+            elif epoch < 100 and epoch % 5 == 0:
+                log_rec_images(real, rec, fake=None, flag='valid', resize=128, save=True)
+            elif epoch >= 100 and epoch % 100 == 0:
+                log_rec_images(real, rec, fake=None, flag='valid', resize=128, save=True)
 
     # =======================================================================================================================
 
@@ -361,11 +373,15 @@ def main():
         save_epoch = (epoch//opt.save_iter)*opt.save_iter
 
         if epoch == save_epoch:
+        # if epoch % opt.save_iter==0:
             current_checkpoint = save_checkpoint(
                 vsc_model, optimizers, save_epoch)
 
-        if prev_checkpoint is not None:
-            os.remove(prev_checkpoint)
+            if prev_checkpoint is not None:
+                try:
+                    os.remove(prev_checkpoint)
+                except:
+                    print(f'\tCan\'t find {prev_checkpoint}. keep training')
 
         prev_checkpoint = current_checkpoint
 
@@ -386,10 +402,9 @@ def main():
         vsc_model.train()
         for iteration, (batch, denoised_batch, filenames) in enumerate(data_loader, 0):
 
-            real, rec, fake = train_vsc(
-                epoch, iteration, batch, denoised_batch, cur_iter)
+            train_vsc(epoch, iteration, batch, denoised_batch, cur_iter)
             cur_iter += 1
-
+        save_log(log_save_path, epoch, am_rec, am_prior)
         print(f'\n=========> Train round finished. Starting evaluation round ===========')
         # --------------store parameters to wandb histograms-----
         histograms = {}
@@ -405,7 +420,7 @@ def main():
         for iteration, (batch, denoised_batch, filenames) in enumerate(valid_data_loader, 0):
 
             print('=========> Validating...')
-            real_valid, rec_valid = valid_vsc(epoch, batch)
+            valid_vsc(epoch, batch)
 
         print('=========> wandb logging...')
         # save logs
@@ -420,28 +435,10 @@ def main():
             **histograms
         })
 
-        # save rec_imgs
-        if epoch % 5 == 0:
-            rec_imgs_train = plot_rec_images(real, rec, fake, flag='train', resize=128, save=False)
-            rec_imgs_valid = plot_rec_images(
-                real_valid, rec_valid, flag='valid', resize=128, save=False)
-            experiment.log({
-                'images': wandb.Image(rec_imgs_train, caption="1st row: Real, 2nd row: Rec, 3nd row: Fake"),
-                'Benchmarks': wandb.Image(rec_imgs_valid, caption="Upper row: Real; Lower row: Rec")
-            })
 
-        elif epoch < 100 and epoch % 10 == 0:
-            rec_imgs_train = plot_rec_images(
-                real, rec, fake, flag='train', resize="", save=True)
-            rec_imgs_train = plot_rec_images(
-                real_valid, rec_valid, flag='valid', resize="", save=True)
-        elif epoch >= 100 and epoch % 100 == 0:
-            rec_imgs_train = plot_rec_images(
-                real, rec, fake, flag='train', resize="", save=True)
-            rec_imgs_train = plot_rec_images(
-                real_valid, rec_valid, flag='valid', resize="", save=True)
 # =======================================================================================================================
 
 
 if __name__ == "__main__":
     main()
+
