@@ -38,11 +38,11 @@ parser.add_argument("--save_epoch", '-save_e', type=int,
                     default=1, help="save checkpoint per epoch")
 
 # data
-parser.add_argument('--XX_DIR', dest='XX_DIR', type=str,
+parser.add_argument('--XX_DIR', '-x_dir', dest='XX_DIR', type=str,
                     default='../data/data_for_Sup_train/imgs')
-parser.add_argument('--YY_DIR', dest='YY_DIR', type=str,
+parser.add_argument('--YY_DIR', '-y_dir', dest='YY_DIR', type=str,
                     default='../data/data_for_Sup_train/masks')
-parser.add_argument('--SAVEDIR', dest='SAVEDIR', type=str,
+parser.add_argument('--SAVEDIR', '-save', dest='SAVEDIR', type=str,
                     default='model/Unet_rmbg')  # Unet_rmbg
 
 parser.add_argument('--input_size', '-s_in', dest='size_in',
@@ -53,7 +53,7 @@ parser.add_argument('--image_channel', '-c', dest='image_channel',
                     metavar='Channel', default=3, type=int, help='channel of image input')
 parser.add_argument('--img_type', '-t', dest='img_type',
                     metavar='TYPE', type=str, default='.png', help='image type: .png, .jpg ...')
-parser.add_argument('--stratify_off',  action='store_true',
+parser.add_argument('--stratify', action='store_true',
                     default=False, help='whether to stratified sampling')
 
 # model
@@ -76,8 +76,8 @@ parser.add_argument('--loss_metric', '-m', dest='loss_metric',
                     help="Loss fuction goal: maximize Dice score > 'max' / minimize Valid Loss > 'min'")
 parser.add_argument("--pretrained", '-p', default="",
                     type=str, help="path to pretrained model (default: none)")
-parser.add_argument("--imgBatchArgMode", '-a', default='random', type=str,
-                    help='Image Batch Argmentaion mode: "single", "multi", "random", "mix" in ImgBatchAugmentSampler. \
+parser.add_argument("--imgBatchArgMode", '-arg', default='', type=str,
+                    help='Image Batch Argmentaion mode: "random", "mix" in ImgBatchAugmentSampler. \
                         \nIf you launch imgBatchArgMode, you need prepared data which you want batchArgmentation in \
                         data_for_Sup_train/imgs_batch_arg, masks_batch_arg ')
 
@@ -143,8 +143,11 @@ def train_net(net,
     assert len(img_paths) == len(
         mask_paths), f'number imgs: {len(img_paths)} and masks: {len(mask_paths)} need equal '
 
-    if not args.stratify_off:
-        df = pd.read_csv('../data/imgs_label_byHSV.csv', index_col=0)
+    if args.stratify:
+        try:
+            df = pd.read_csv('../data/imgs_label_byHSV.csv', index_col=0)
+        except:
+            print('You need provide label of imgs at "../data/imgs_label_byHSV.csv".')
         assert len(df.Name) == len(
             img_paths), f'number of imgs: {len(img_paths)} and imgs_label_byHSV.csv: {len(df.label)} need equal '
         print(
@@ -152,7 +155,7 @@ def train_net(net,
 
     X_train, X_valid, y_train, y_valid = train_test_split(
         img_paths, mask_paths, test_size=val_percent, random_state=1,
-        stratify=df.label if not args.stratify_off else None)
+        stratify=df.label if args.stratify else None)
 
     train_set = MothDataset(
         X_train, y_train, input_size=args.size_in, output_size=args.size_out, img_aug=True)
@@ -231,11 +234,12 @@ def train_net(net,
 
     # 4. Set up the optimizer, the loss, the learning rate scheduler and the loss scaling for AMP
     # optimizer =  optim.AdamW(net.parameters(), lr=learning_rate, weight_decay=1e-2)
-    optimizer = optim.Adam(net.parameters(), lr=learning_rate)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, metric, patience=10)  # goal: maximize Dice score > 'max' / minimize Valid Loss > 'min'
+#     optimizer = optim.Adam(net.parameters(), lr=learning_rate)
+#     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+#         optimizer, metric, patience=5)  # goal: maximize Dice score > 'max' / minimize Valid Loss > 'min'
 
     # grad_scaler = torch.cuda.amp.GradScaler(enabled=amp)
+    
     # criterion = nn.CrossEntropyLoss()
     # shape = (b, h, w) if reduction ='none'
     # criterion_3d = nn.CrossEntropyLoss(reduction='none')
@@ -256,10 +260,10 @@ def train_net(net,
     # 5. Begin training
     best_loss_init = 1e3
     best_dice_init = 0
-    patience = 30
-    trigger_times = 0
+    patience = 11                # early_stop
+    trigger_times = 0            # early_stop
     metric = metric
-    warmup_epochs = 10
+    warmup_epochs = 5
     start_time = time.time()
     for epoch in range(epochs):
         net.train()
@@ -267,12 +271,14 @@ def train_net(net,
 
         # ------------------------------------------------------------------------------------------
         # learning rate warmup(optional)
-        if (epoch == warmup_epochs) or (args.pretrained and epoch==0):
+        
+        if (epoch == warmup_epochs and not args.pretrained) or (epoch == 0 and args.pretrained ):
             optimizer = optim.AdamW(
                 net.parameters(), lr=args.lr, weight_decay=1e-3)
+            # goal: maximize Dice score > 'max' / minimize Valid Loss > 'min'
             scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-                optimizer, metric, patience=15)
-        elif (epoch < warmup_epochs) and (not args.pretrained):
+                optimizer, metric, patience=(patience//2))
+        elif (epoch < warmup_epochs and not args.pretrained):
             print(f'\n lr waruping')
             warmup_percent_done = epoch/warmup_epochs
             # gradual warmup_lr
