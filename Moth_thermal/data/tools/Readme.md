@@ -7,7 +7,7 @@
   - 重複檢查(check_mask_duplicated.py)
     - 刪除/保留重複  
   - 獲得去背影像(get_Image_rmbg.py)
-    - 原圖檔 x mask 產出去背影像
+    - `image x mask` 產出去背影像
     - 背景可指定顏色填補
 
   - 花式取樣(get_imgs_label_byHSV.py)
@@ -16,7 +16,7 @@
       - 假設取12個點，得到36個值，然後做分群 然後按照群去分層取樣
       - 取樣點分布示意(翅膀部位取樣(3x3)，每個取樣點計算h,s,v平均)
       - 依據取樣點計算h,s,v後，降維成3個維度，並使用Birch分群視覺化
-      - 最後產出imgs_label_byHSV.csv，提供Sup_train.py 在資料切分為train、valid時使用
+      - 最後產出imgs_label_byHSV.csv，提供Sup_train.py 在資料切分為train、valid(`train_test_split`)時使用
 
       <pre><code>
       df = pd.read_csv('../data/imgs_label_byHSV.csv', index_col=0)
