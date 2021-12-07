@@ -1,0 +1,5 @@
+  - 根據標本翅膀部位的hsv做分群產出label(get_imgs_label_byHSV.py)
+    - 計算畫面中翅膀位置的 
+  - mask後處理(Postprocess.py)
+    - 抓取最大輪廓線並進行填補
+    - 去除mask最大輪廓線外的雜訊並將輪廓線內的畫素完全填補)
