@@ -38,7 +38,7 @@ colors = ['#000080', '#00008b', '#0000ff', '#006400', '#008000', '#008080',
 # Sample pixels on moth specimen and calculate HSV values
 # ====================================================================================================
 
-dir_imgs = Path('../../data/data_for_Sup_train/imgs/')
+dir_imgs = Path('./data_for_Sup_train/imgs/')
 # dir_imgs = Path('../../data/origin')
 
 pathes_imgs = list(dir_imgs.glob('*.png'))
@@ -65,7 +65,7 @@ for x, p_x in enumerate(w_samples):
 len(samples_grid)
 
 
-dir_tmp = Path('../tmp/crop_test')
+dir_tmp = Path('./tmp/crop_test')
 dir_tmp.mkdir(exist_ok=True, parents=True)
 
 
@@ -140,8 +140,8 @@ for obj in loc_filter:
     samples_grid_wings[f'{x}_{y}'] = int(y), int(x)
 # len(samples_grid_wings)
 
-np.save('../../data/samples_grid_wings.npy', samples_grid_wings)
-samples_grid_wings_ = np.load('../../data/samples_grid_wings.npy', allow_pickle=True)
+np.save('./samples_grid_wings.npy', samples_grid_wings)
+samples_grid_wings_ = np.load('./samples_grid_wings.npy', allow_pickle=True)
 samples_grid_wings = [rows for idx, rows in np.ndenumerate(samples_grid_wings_)][0]
 print(f'\n{samples_grid_wings} loaded')
 
@@ -162,7 +162,7 @@ for idx, path in enumerate(pathes_imgs):
 
 df_new = moth_hsv_to_df(moth_hsv)
 df_new.to_csv(
-    f'../../data/imgs_{len(pathes_imgs)}_hsv_samples_wing.csv')
+    f'./imgs_{len(pathes_imgs)}_hsv_samples_wing.csv')
 
 # ====================================================================================================
 # Clustering moth specimen images depends HSV values
@@ -171,7 +171,7 @@ df_new.to_csv(
 # Decomposition
 print('\nStart Decomposition')
 df_new = pd.read_csv(
-    f'../../data/imgs_{len(pathes_imgs)}_hsv_samples_wing.csv', index_col=0)
+    f'./imgs_{len(pathes_imgs)}_hsv_samples_wing.csv', index_col=0)
 
 X = df_new.iloc[:, 1:]
 Z = StandardScaler().fit_transform(X)    # Normalization,  u=0, std=1
@@ -198,7 +198,7 @@ print('\nClustering performance evaluation')
 
 time_ = datetime.now().strftime("%y%m%d_%H%M")
 # dir_save = Path('../tmp/cluster_test')
-dir_save = Path(f'../../data/tmp/cluster_test_{time_}')
+dir_save = Path(f'./tmp/cluster_test_{time_}')
 dir_save.mkdir(exist_ok=True, parents=True)
 
 n_cluster = range(2, 21)
@@ -264,10 +264,11 @@ print('\t', 'Clustering id and size : ',
 
 df_label = pd.concat(
     [df_new['Name'], pd.DataFrame(cls_ids, columns=['label'])], axis=1)
-path_save_label = f'../../data/imgs_label_byHSV.csv'
+path_save_label = f'./imgs_label_byHSV.csv'
 df_label.to_csv(path_save_label)
 print(f'{path_save_label} saved')
 
+df_label = pd.read_csv(path_save_label, index_col=0)
 
 # ====================================================================================================
 # Visualiztion clustering result
