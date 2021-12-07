@@ -1,18 +1,24 @@
 
+### 研究目標:
+- 探討不同緯度及海拔下，鱗翅目適溫範圍與型態功能性變異的關係
 
+---
+### 資料夾說明(按工作順序)
 
-## 資料夾說明
-### yolov4/
-- 從標本照框選出標本所在位置，獲得BoundingBox
+#### data/
+- 放置資料所在
 
-### removebg/
-- 使用監督與非監督方法進行影像分割，取得去背的標本影像
+#### yolov4/
+- 內含針對鱗翅目標本訓練好的yolov4模型
+- 使用yolo模型從標本照框選出標本所在位置(獲得BoundingBox)
+- 根據產出的BoundingBox挑整框選範圍，獲得初步crop與padding過的標本影像(256 x 256)
+
+#### removebg/
+- 使用監督與非監督方法進行影像分割，取得去背的鱗翅目標本影像
     - Supervised : [Pytorch-UNet](https://github.com/milesial/Pytorch-UNet)
     - Unsupervised : [Unsupervised Image Segmentation by Backpropagation](https://github.com/kanezaki/pytorch-unsupervised-segmentation)
 
-### vsc/
-- 使用去背的蛾類標本影像作為材料，進行Autoencoder模型訓練
+#### vsc/
+- 使用去背的鱗翅目標本影像作為材料，進行Autoencoder模型訓練
     - Autoencoder版本 : [Variational Sparse Coding](https://github.com/ftonolini45/Variational_Sparse_Coding) 
 
-### data/
-- 放置資料所在
