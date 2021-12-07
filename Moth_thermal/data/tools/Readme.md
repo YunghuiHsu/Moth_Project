@@ -1,6 +1,6 @@
   - 遮罩轉換(convert_to_mask.py)
-    - 將3通道(channel=3, 8x3=24bit)的mask，轉換為1通道(channel=1, 8x1=8bit)
-    - 將各種來源的mask轉換為單通道mask，包括
+    - 將3通道(**channel=3, 8x3=24bit**)的mask，轉換為1通道(**channel=1, 8x1=8bit**)
+    - 將各種來源的mask轉換為單通道mask，包括:
       - remove.bg得到的去背影像
       - 小畫家修補去背
       - Unsup segmentation獲得的rgb色塊圖 
