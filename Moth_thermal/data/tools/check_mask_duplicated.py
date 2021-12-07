@@ -62,102 +62,103 @@ import shutil
 # exclude mask picked
 
 # imgs need for checked
+# dir_mask_waiting = Path(f'../../data/label_waiting_postprocess')
 
 # data\data_for_Sup_predict\SJRS_for_predict、SJRS_for_predict、MCTT_for_predict
-
-file = 'MCTT_for_predict'
-dir_target = Path(f'../../data/data_for_Sup_predict/{file}')
-dir_target = Path(f'../../data/label_waiting_postprocess/running/running_mask_need_delete')
+# file = 'SJRS_for_predict'
+# dir_target = Path(f'../../data/data_for_Sup_predict/{file}')
+dir_target = Path('../../data/data_for_Sup_train/imgs')
 imgs_target = list(dir_target.glob('*.png'))
 print('imgs_target : ', len(imgs_target))
 imgs_target_name = {path.stem for path in imgs_target}
-print('imgs_target_name : ',len(imgs_target_name))
-
+print('imgs_target_name : ', len(imgs_target_name))
 
 
 # mask_picked
 dir_masks_picked = Path('../../data/data_for_Sup_train/masks')
-imgs_masks_names = [path.stem for path in dir_masks_picked.glob('*.png')]
+imgs_masks_names = {path.stem for path in dir_masks_picked.glob('**/*.png')}
 print('imgs_masks : ', len(imgs_masks_names))
-
 
 inter_ = set(imgs_target_name) & set(imgs_masks_names)
 except_ = set(imgs_target_name) - set(imgs_masks_names)
 print('imgs_target & imgs_masks :', len(inter_))
 print('imgs_target - imgs_masks :', len(except_))
 
-
-# save_dir = Path(f'data/tmp/target_tmp')
-# save_dir = Path(f'../../data/data_for_Sup_predict/{file}')
-# save_dir.mkdir(parents=True, exist_ok=True)
+save_dir = Path(f'data/tmp/target_tmp')
+save_dir = Path(f'../../data/data_for_Sup_predict/final')
+save_dir.mkdir(parents=True, exist_ok=True)
 
 error_name = {}
-for idx, img_name in enumerate(inter_):
+for idx, img_name in enumerate(except_):
     # img_name = path.name.split('。')[0].split('-')[0].split('.')[0]
     path = dir_target.joinpath(img_name + '.png')
     try:
         path.unlink()
+        # img = io.imread(path)
     except OSError as e:
         print(f"Error:{ e.strerror}")
         error_name[idx] = img_name
-    print(f'{idx:3d}, {img_name} deleted')
+
+    # io.imsave(save_dir.joinpath(img_name + '.png'), img)
+
+    print(f'{idx:3d}, {img_name}')
 
 # =================================================================================================
 # Transform img_rmbg from mask
 # -------------------------------------------------------------------------------------------------
 
-# load masks
-dir_target = Path('data\data_for_Sup_predict')
-masks = list(dir_target.glob('*Mask.png'))
-masks_name = [path.stem.split('_UnetMask')[0] for path in masks]
-print(f'masks : {len(masks)}')
-print(f'masks_name : {len(masks_name)}')
+# # load masks
+# dir_target = Path('data\data_for_Sup_predict')
+# masks = list(dir_target.glob('*Mask.png'))
+# masks_name = [path.stem.split('_UnetMask')[0] for path in masks]
+# print(f'masks : {len(masks)}')
+# print(f'masks_name : {len(masks_name)}')
 
-# ---------------------------------------------------------------------------------------
-# 確認是否有亂碼
-# ^: not
-# 標點符號 (Punctuation & Symbols):   \u0021-\u002F\u003A-\u0040\u005B-\u0060\u007B-\u007E
-# \w: any word character
+# # ---------------------------------------------------------------------------------------
+# # 確認是否有亂碼
+# # ^: not
+# # 標點符號 (Punctuation & Symbols):   \u0021-\u002F\u003A-\u0040\u005B-\u0060\u007B-\u007E
+# # \w: any word character
 
-regex = re.compile(
-    r'[^\w\u0021-\u002F\u003A-\u0040\u005B-\u0060\u007B-\u007E\s]')
-check_error_character = [n for n in masks_name if regex.findall(n) != []]
-print(len(check_error_character))
-assert check_error_character == [
-], f'wrong character : {check_error_character}'
-# ---------------------------------------------------------------------------------------
-
-
-# load raw imgs
-dir_origin = Path('../crop/origin')
+# regex = re.compile(
+#     r'[^\w\u0021-\u002F\u003A-\u0040\u005B-\u0060\u007B-\u007E\s]')
+# check_error_character = [n for n in masks_name if regex.findall(n) != []]
+# print(len(check_error_character))
+# assert check_error_character == [
+# ], f'wrong character : {check_error_character}'
+# # ---------------------------------------------------------------------------------------
 
 
-# get img with background removed
-name_error = []
-for idx, name in enumerate(masks_name):
+# # load raw imgs
+# dir_origin = Path('../crop/origin')
 
-    try:
-        img_ = io.imread(dir_origin.joinpath(name + '.png')
-                         )            # (h,w,c), [0, 255], uint8
-    except Exception as e:
-        print(e)
-        name_error.append(name)
 
-    # load mask and transform
-    mask_ = io.imread(dir_target.joinpath(
-        name + '_UnetMask.png'))  # (h,w), [0|255], uint8
-    # (h,w,3). [0|255], uint8 >　[0.0|1.0], float64
-    mask_3 = np.stack([mask_, mask_, mask_], axis=2)/255
-    white_mask = 1-mask_3
-    blue_mask = np.zeros_like(mask_3)
-    # assign channel 3 depends on binary mask(0,1) (0,0,0) > (0,0,1)
-    blue_mask[..., 2] = white_mask[..., 2]
+# # get img with background removed
+# name_error = []
+# for idx, name in enumerate(masks_name):
 
-    # get img with background removed
-    img_rmgb = (img_ * mask_3 + blue_mask*255).astype('uint8')
+#     try:
+#         img_ = io.imread(dir_origin.joinpath(name + '.png')
+#                          )            # (h,w,c), [0, 255], uint8
+#     except Exception as e:
+#         print(e)
+#         name_error.append(name)
 
-    # save img
-    io.imsave(dir_target.joinpath(name + '.png'), img_)
-    io.imsave(dir_target.joinpath(name + '_UnetRmbg.png'), img_rmgb)
-    print(f'{idx:4d}, {name} saved')
+#     # load mask and transform
+#     mask_ = io.imread(dir_target.joinpath(
+#         name + '_UnetMask.png'))  # (h,w), [0|255], uint8
+#     # (h,w,3). [0|255], uint8 >　[0.0|1.0], float64
+#     mask_3 = np.stack([mask_, mask_, mask_], axis=2)/255
+#     white_mask = 1-mask_3
+#     blue_mask = np.zeros_like(mask_3)
+#     # assign channel 3 depends on binary mask(0,1) (0,0,0) > (0,0,1)
+#     blue_mask[..., 2] = white_mask[..., 2]
+
+#     # get img with background removed
+#     img_rmgb = (img_ * mask_3 + blue_mask*255).astype('uint8')
+
+#     # save img
+#     io.imsave(dir_target.joinpath(name + '.png'), img_)
+#     io.imsave(dir_target.joinpath(name + '_UnetRmbg.png'), img_rmgb)
+#     print(f'{idx:4d}, {name} saved')
 # =================================================================================================
