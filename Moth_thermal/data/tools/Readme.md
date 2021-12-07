@@ -11,12 +11,13 @@
     - 背景可指定顏色填補
 
   - 花式取樣(get_imgs_label_byHSV.py)
-    - 根據標本翅膀部位的hsv做分群產出label
+    - 根據標本翅膀部位的HSV(即色相、飽和度、明度 Hue, Saturation, Value) 做分群產出label
     - 系統化採樣 在每張照片固定位置取一個5x5或3x3的方塊，計算HSV平均值
       - 假設取12個點，得到36個值，然後做分群 然後按照群去分層取樣
       - 取樣點分布示意(翅膀部位取樣(3x3)，每個取樣點計算h,s,v平均)
       - 依據取樣點計算h,s,v後，降維成3個維度，並使用Birch分群視覺化
       - 最後產出imgs_label_byHSV.csv，提供Sup_train.py 在資料切分為train、valid時使用
+
       <pre><code>
       df = pd.read_csv('../data/imgs_label_byHSV.csv', index_col=0)
       X_train, X_valid, y_train, y_valid = train_test_split(
