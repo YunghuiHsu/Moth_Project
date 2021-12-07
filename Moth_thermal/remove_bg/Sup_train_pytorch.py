@@ -70,7 +70,7 @@ parser.add_argument('--validation', '-v', dest='val', type=float, default=10.0,
 parser.add_argument('--amp', action='store_true',
                     default=False, help='Use mixed precision')
 parser.add_argument('--contour_weight', '-w', dest='contour_weight',
-                    metavar='Contour_Weight', type=int, default=3, help='loss weight for contour area')
+                    metavar='Contour_Weight', type=float, default=0, help='loss weight for contour area. must be positive')
 parser.add_argument('--loss_metric', '-m', dest='loss_metric',
                     metavar='Metric', type=str, default='max',
                     help="Loss fuction goal: maximize Dice score > 'max' / minimize Valid Loss > 'min'")
@@ -130,7 +130,7 @@ def train_net(net,
               amp: bool = False,
               metric: str = 'max',
               contour_weight: int = 3,
-              arg_flag: str = args.imgBatchArgMode
+              arg_flag: str = ''
               ):
 
     # Prepare dataset, Split into train / validation partitions
@@ -233,14 +233,14 @@ def train_net(net,
     ''')
 
     # 4. Set up the optimizer, the loss, the learning rate scheduler and the loss scaling for AMP
-    # optimizer =  optim.AdamW(net.parameters(), lr=learning_rate, weight_decay=1e-2)
+#     optimizer = optim.AdamW(net.parameters(), lr=learning_rate, weight_decay=1e-3)
 #     optimizer = optim.Adam(net.parameters(), lr=learning_rate)
 #     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
 #         optimizer, metric, patience=5)  # goal: maximize Dice score > 'max' / minimize Valid Loss > 'min'
 
     # grad_scaler = torch.cuda.amp.GradScaler(enabled=amp)
-    
-    # criterion = nn.CrossEntropyLoss()
+
+    criterion = nn.CrossEntropyLoss()
     # shape = (b, h, w) if reduction ='none'
     # criterion_3d = nn.CrossEntropyLoss(reduction='none')
     global_step = 0
@@ -271,10 +271,10 @@ def train_net(net,
 
         # ------------------------------------------------------------------------------------------
         # learning rate warmup(optional)
-        
-        if (epoch == warmup_epochs and not args.pretrained) or (epoch == 0 and args.pretrained ):
+
+        if (epoch == warmup_epochs and not args.pretrained) or (epoch == 0 and args.pretrained):
             optimizer = optim.AdamW(
-                net.parameters(), lr=args.lr, weight_decay=1e-3)
+                net.parameters(), lr=learning_rate, weight_decay=1e-3)
             # goal: maximize Dice score > 'max' / minimize Valid Loss > 'min'
             scheduler = optim.lr_scheduler.ReduceLROnPlateau(
                 optimizer, metric, patience=(patience//2))
@@ -282,9 +282,10 @@ def train_net(net,
             print(f'\n lr waruping')
             warmup_percent_done = epoch/warmup_epochs
             # gradual warmup_lr
-            warmup_learning_rate = args.lr ** (1 /
+            warmup_learning_rate = learning_rate ** (1 /
                                                (warmup_percent_done + 1e-10))
             optimizer = optim.AdamW(net.parameters(), lr=warmup_learning_rate)
+            scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, metric, patience=(patience//2))
 
         # ------------------------------------------------------------------------------------------
 
@@ -316,22 +317,21 @@ def train_net(net,
 
                 # Choose loose function
                 # 1. cross_entrophy + dice_loss
-                # train_loss_batch = criterion(masks_pred, masks_true) \
-                #     + dice_loss(F.softmax(masks_pred, dim=1).float(),             # (b, class, h, w)
-                #                 F.one_hot(masks_true, net.n_classes).permute(     # (b, class, h, w)
-                #         0, 3, 1, 2).float(),
-                #     multiclass=True)
+                if args.contour_weight == 0:
+                    train_loss = criterion(masks_pred, masks_true) \
+                        + dice_loss(F.softmax(masks_pred, dim=1).float(),             # (b, class, h, w)
+                                    F.one_hot(masks_true, net.n_classes).permute(     # (b, class, h, w)
+                            0, 3, 1, 2).float(),
+                        multiclass=True)
 
                 # 2. (cross_entrophy + dice_loss) weighted by countour
-                # get mask_contour and weight it for loss calculation (optional)
-                cross_entrophy_weighted, dice_loss_AllArea, dice_loss_Contour = loss_contour_weighted(
-                    masks_true, masks_pred, net, device, contour_weight
-                )
-                train_loss_contour_weighted = cross_entrophy_weighted + \
-                    dice_loss_AllArea + dice_loss_Contour*contour_weight
-
-                # train_loss_batch or train_loss_contour_weighted
-                train_loss = train_loss_contour_weighted
+                else:
+                    # get mask_contour and weight it for loss calculation (optional)
+                    cross_entrophy_weighted, dice_loss_AllArea, dice_loss_Contour = loss_contour_weighted(
+                        masks_true, masks_pred, net, device, contour_weight
+                    )
+                    train_loss = cross_entrophy_weighted + \
+                        dice_loss_AllArea + dice_loss_Contour*contour_weight
 
                 # optimizer.zero_grad(set_to_none=True)
                 # grad_scaler.scale(loss_train).backward()
@@ -384,11 +384,9 @@ def train_net(net,
             pd.DataFrame.from_dict(params).to_csv(
                 dir_checkpoint.joinpath('losses.csv'))
 
-            global best_dice_score
+            global best_dice_score, best_val_loss, best_epoch
             best_dice_score = max(params['valid_dice'])
-            global best_val_loss
             best_val_loss = min(params['valid_loss'])
-            global best_epoch
             best_epoch = np.argmin(params['valid_loss'])
 
             # learning curve
