@@ -22,21 +22,24 @@ import torchvision.utils as vutils
 from torch.autograd import Variable
 import torchvision
 from torchvision.utils import make_grid, save_image
+import wandb
 
-from utils.dataset import ImageDatasetFromFile
+from utils.dataset import ImageDatasetFromFile, ImageDatasetFromCache
 from utils.networks import VSC
 from utils.average_meter import AverageMeter
 #from model import AAResNet50NoTop
-import wandb
 
 
 # =======================================================================================================================
 
-parser = argparse.ArgumentParser()
+parser = argparse.ArgumentParser(
+    description='Train VSC(Variational Sparse Coding) Autoencoder model for Moth diversity'
+)
 
 # data
-parser.add_argument('--dataroot', default="data/moth_thermal_rmbg_padding_256",
-                    type=str, help='path to dataset')
+parser.add_argument('--dataroot', type=str, default="data/moth_thermal_rmbg_padding_256.npz",
+                    help='path to dataset "data/moth_thermal_rmbg_padding_256" \
+                        or load image_catch "data/moth_thermal_rmbg_padding_256.npz"')
 
 parser.add_argument('--input_height', type=int, default=256,
                     help='the height  of the input image to network')
@@ -60,7 +63,7 @@ parser.add_argument("--pretrained", default='', type=str,
                     help="path to pretrained model (default: none)")
 
 # model
-parser.add_argument('--batchSize',  type=int,
+parser.add_argument('--batchSize', '-b',  type=int,
                     default=16, help='input batch size')
 parser.add_argument('--channels', default="32, 64, 128, 256, 512, 512",
                     type=str, help='the list of channel numbers')
@@ -161,7 +164,7 @@ def save_log(log_save_path, epoch, am_rec, am_prior, cur_iter: int = 0):
 
 
 def log_rec_images(real: torch.tensor, rec: torch.tensor, fake: torch.tensor = None,
-                    flag: str = 'train', resize: int = 128, save: bool = True, return_: bool = False):
+                   flag: str = 'train', resize: int = 128, save: bool = True, return_: bool = False):
 
     if flag == 'train':
         images_stack = torch.cat(
@@ -178,7 +181,8 @@ def log_rec_images(real: torch.tensor, rec: torch.tensor, fake: torch.tensor = N
     if save:
         vutils.save_image(images_stack.data.cpu(), save_path, nrow=opt.nrow)
         if flag == 'train':
-            vutils.save_image(images_stack.data.cpu(), save_path_up, nrow=opt.nrow)
+            vutils.save_image(images_stack.data.cpu(),
+                              save_path_up, nrow=opt.nrow)
     if return_:
         return images_stack
 
@@ -250,28 +254,46 @@ def main():
         load_model(vsc_model, optimizers, opt.pretrained)
 
     # -----------------load dataset--------------------------
-    image_list = [x for x in glob.iglob(
-        opt.dataroot + '/**/*', recursive=True) if is_image_file(x)]
-    #train_list = image_list[:opt.trainsize]
-    train_list = image_list[:]
-    # assert len(train_list) > 0
+    if opt.dataroot.endswith('npz' or 'npy'):
+        # load image_catch.npz
+        path_preloads = Path(f'{opt.dataroot}')
+        print(f'\tLoading image_catch from : {path_preloads}')
 
-    #image_cache = np.load('./wolrdwide_lepidoptera_yolov4_cropped_and_padded.npy', allow_pickle=True)
+        image_cache = np.load(path_preloads)['image_catch']
+        print(f'\tCheck image_cache.shape : {image_cache.shape}')
 
-    train_set = ImageDatasetFromFile(train_list, aug=True)
-    #train_set = ImageDatasetFromCache(image_cache, aug=True)
+        train_set = ImageDatasetFromCache(image_cache, aug=True)
+    else:
+        # load image from path
+        print(f'\tLoading image_list from : {opt.dataroot}')
+        image_list = [x for x in glob.iglob(
+            opt.dataroot + '/**/*', recursive=True) if is_image_file(x)]
+        #train_list = image_list[:opt.trainsize]
+        train_list = image_list[:]
+        assert len(train_list) > 0
+        train_set = ImageDatasetFromFile(train_list, aug=True)
 
     vsc_data_loader = torch.utils.data.DataLoader(
-        train_set, batch_size=opt.batchSize, shuffle=True, num_workers=int(opt.workers), drop_last=True, pin_memory=True)
+        train_set, batch_size=opt.batchSize, shuffle=True,
+        num_workers=int(opt.workers), drop_last=False, pin_memory=True)
 
     # valid_list = ['./benchmarks/' +
     #               x for x in os.listdir('./benchmarks') if is_image_file(x)]
-    dir_benchmarks = Path('data/benchmarks')
-    valid_list = [str(path) for path in dir_benchmarks.glob('*.png')]
-    valid_set = ImageDatasetFromFile(valid_list, aug=False)
+    if Path('data/benchmarks.npz').exists():
+        path_preloads = Path(f'data/benchmarks.npz')
+        print(f'\tLoading benchmarks_catch from : {path_preloads}')
+        benchmarks_cache = np.load(path_preloads)['image_catch']
+        print(f'\tCheck benchmarks_cache.shape : {benchmarks_cache.shape}')
+        valid_set = ImageDatasetFromCache(benchmarks_cache, aug=False)
+    else:
+        dir_benchmarks = Path('data/benchmarks')
+        valid_list = [str(path) for path in dir_benchmarks.glob('*.png')]
+        valid_set = ImageDatasetFromFile(valid_list, aug=False)
+
     valid_data_loader = torch.utils.data.DataLoader(
-        valid_set, batch_size=opt.batchSize, shuffle=False, num_workers=int(opt.workers))
-    blur = torchvision.transforms.GaussianBlur(5)
+        valid_set, batch_size=opt.batchSize, shuffle=False,
+        num_workers=int(opt.workers), pin_memory=True)
+
     start_time = time.time()
 
     #cur_iter = 0
@@ -330,8 +352,9 @@ def main():
                 real, rec, fake, flag='train', resize=128, save=False, return_=True)
             experiment.log({
                 'images': wandb.Image(rec_imgs, caption="1st row: Real, 2nd row: Rec, 3nd row: Fake"),
-            })
-        elif epoch < 100 and epoch % 5 == 0:
+            }, commit=False)
+
+        if epoch < 100 and epoch % 10 == 0:
             rec_imgs = log_rec_images(
                 real, rec, fake, flag='train', resize=128, save=True)
         elif epoch >= 100 and epoch % 100 == 0:
@@ -351,10 +374,13 @@ def main():
                 experiment.log({
                     'benchmarks': wandb.Image(rec_imgs, caption="1st row: Real, 2nd row: Rec, 3nd row: Fake"),
                 })
-            elif epoch < 100 and epoch % 5 == 0:
-                log_rec_images(real, rec, fake=None, flag='valid', resize=128, save=True)
+
+            if epoch < 100 and epoch % 10 == 0:
+                log_rec_images(real, rec, fake=None,
+                               flag='valid', resize=128, save=True)
             elif epoch >= 100 and epoch % 100 == 0:
-                log_rec_images(real, rec, fake=None, flag='valid', resize=128, save=True)
+                log_rec_images(real, rec, fake=None,
+                               flag='valid', resize=128, save=True)
 
     # =======================================================================================================================
 
@@ -373,7 +399,7 @@ def main():
         save_epoch = (epoch//opt.save_iter)*opt.save_iter
 
         if epoch == save_epoch:
-        # if epoch % opt.save_iter==0:
+            # if epoch % opt.save_iter==0:
             current_checkpoint = save_checkpoint(
                 vsc_model, optimizers, save_epoch)
 
@@ -406,14 +432,17 @@ def main():
             cur_iter += 1
         save_log(log_save_path, epoch, am_rec, am_prior)
         print(f'\n=========> Train round finished. Starting evaluation round ===========')
+
         # --------------store parameters to wandb histograms-----
-        histograms = {}
-        for tag, value in vsc_model.named_parameters():
-            tag = tag.replace('/', '.')
-            histograms['Weights/' +
-                       tag] = wandb.Histogram(value.data.cpu())
-            histograms['Gradients/' +
-                       tag] = wandb.Histogram(value.grad.data.cpu())
+        if epoch % 10 == 0:
+            histograms = {}
+            for tag, value in vsc_model.named_parameters():
+                tag = tag.replace('/', '.')
+                histograms['Weights/' +
+                           tag] = wandb.Histogram(value.data.cpu())
+                histograms['Gradients/' +
+                           tag] = wandb.Histogram(value.grad.data.cpu())
+            experiment.log({**histograms}, commit=False)
 
         # --------------valid------------
         vsc_model.eval()
@@ -432,13 +461,11 @@ def main():
             'learning rate_Generator': optimizerG.param_groups[0]['lr'],
             # 'images': wandb.Image(rec_imgs_train, caption="1st row: Real, 2nd row: Rec, 3nd row: Fake"),
             # 'Benchmarks': wandb.Image(rec_imgs_valid, caption="Upper row: Real; Lower row: Rec"),
-            **histograms
+            # **histograms
         })
-
 
 # =======================================================================================================================
 
 
 if __name__ == "__main__":
     main()
-
