@@ -13,6 +13,7 @@ from skimage import io
 from skimage.transform import resize
 from torch.autograd import Variable
 from torchvision.ops import nms
+from sklearn.cluster import KMeans
 
 
 class DecodeBox(nn.Module):
@@ -437,28 +438,20 @@ def get_bgcolor(img, pixel_size=20):
 
     # 將三個取樣點合在一起取平均作為背景顏色
     pixels = np.concatenate(
-        (center_top.reshape(-1, 3), bottom_left.reshape(-1, 3), bottom_right.reshape(-1, 3)))
+        (center_top.reshape(-1, 3),
+         bottom_left.reshape(-1, 3),
+         bottom_right.reshape(-1, 3)))
 
-    # 過濾太暗(白色為255)、偏離白灰(std)的畫素
-    try:
-        pixels_filtered = np.asarray(
-            [row for row in list(pixels)
-             if np.array(row).mean() > 255*0.7 and np.array(row).std() < 10]
-        )
-        bg_color = np.mean(pixels_filtered, axis=0).astype(np.int16)
-        bg_color = tuple(bg_color)
-    except Exception as e:
-        # print('\n', e)
-        print(f'\n\tbg_color resampled')
-        pixels_filtered = np.asarray(
-            [row for row in list(pixels)
-             if np.array(row).mean() > 255*0.3 and np.array(row).std() < 30]
-        )
-        bg_color = np.mean(pixels_filtered, axis=0).astype(np.int16)
-        bg_color = tuple(bg_color)
-        # if not tuple(bg_color) == 1 else tuple(192,192,192)
+    # find the most large cluster(a.k.a. backbround color) by kmeans 
+    labels =  KMeans(n_clusters=2, random_state=0).fit_predict(pixels)
+    label_count = np.unique(labels, return_counts=True)[1]
+    label_max = np.argmax(label_count)
+    # print(label_count)
+    # print(label_max)
+    pixels_filtered = pixels[labels == label_max]
+    bg_color = np.mean(pixels_filtered, axis=0).astype(np.int16)
 
     # print('\n pixels_filtered.shape : ', pixels_filtered.shape)
     # print('\n bg_color :', bg_color)
     # print('\n len(bg_color) : ', len(bg_color))
-    return bg_color
+    return tuple(bg_color)
