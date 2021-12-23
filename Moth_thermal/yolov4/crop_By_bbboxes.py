@@ -39,11 +39,6 @@ args = parser.parse_args()
 file = Path(args.file)
 data_root = Path(args.data_root)
 
-# =====================================================================
-# test
-# args.basedir = Path('../../Moth_Specimen_TESRI/tersi_imgs_forYY')
-# args.fill_bg = True
-# =====================================================================
 
 if args.basedir:
     basedir = args.basedir
@@ -62,7 +57,7 @@ if not os.path.exists(f'{save_dir}'):
 
 files = [path for path in glob.glob(f'{basedir}**/*', recursive=True)
          if os.path.splitext(path)[1].lower() in ['.jpg', '.jpeg', '.png']]  # path.split('.')[-1]
-print(f'Prepare data :　{basedir}')
+print(f'Prepare data : {basedir}')
 print(f'Data size in {args.basedir} : {len(files):,d}')
 
 try:
@@ -78,7 +73,7 @@ print(f'Data size after dropna in {file_bboxes}: {len(bboxes_df_drop):,d}')
 
 start = args.start_idx
 end = len(bboxes_df_drop) if args.end_idx == -1 else args.end_idx
-print(f'Process range from [{start} : {end}]')
+print(f'Idx Process range from [{start} : {end}]')
 
 # loading problemed file, it will not be output
 try:
@@ -143,7 +138,7 @@ for idx, row in bboxes_df_drop[start:end].iterrows():
     #     (width, height), resample=Image.LANCZOS)  # resized
 
     bg_color = get_bgcolor(
-        image_cropped, pixel_size=5) if args.fill_bg else args.fill_color
+        image_cropped, pixel_size=10) if args.fill_bg else args.fill_color
 
     image_resized_with_padding = resize_with_padding(
         image_cropped, (256, 256), fill=bg_color)
