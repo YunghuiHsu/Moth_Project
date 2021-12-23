@@ -9,8 +9,8 @@ from PIL import Image, ImageOps
 from skimage import io
 from skimage.transform import resize
 import argparse
+from utils.utils import get_bgcolor, restrict_boundry, resize_with_padding
 
-from skimage.util import dtype
 
 # ===============================================================================================
 parser = argparse.ArgumentParser()
@@ -26,84 +26,69 @@ parser.add_argument("--data_root", '-d', default='../data',
                     type=str, help='where the data directory store')
 # parser.add_argument('--halfcrop', '-hc', action='store_true',
 #                     help='whether to crop data if bboxes is null. when data ')
+parser.add_argument("--basedir", '-dir', default='',
+                    type=str, help='where the data directory to predict')
+parser.add_argument('--start_idx', default=0, type=int,
+                    help="Manual epoch number (useful on restarts)")
+parser.add_argument('--end_idx', default=-1, type=int,
+                    help="Manual epoch number (useful on restarts)")
 
 args = parser.parse_args()
 # ===============================================================================================
 
-file = args.file
-data_root = args.data_root
+file = Path(args.file)
+data_root = Path(args.data_root)
 
-if file.endswith("RS"):
-    basedir = f'{data_root}/data_raw/{file}/'
-elif file.endswith("TT"):
-    basedir = f'{data_root}/data_resize/{file}/'
-elif file.endswith("halfcropped"):
-    basedir = f'{data_root}/data_resize_cropped/{file}/'
+# =====================================================================
+# test
+args.basedir = Path('../../Moth_Specimen_TESRI/tersi_imgs_forYY')
+args.fill_bg = True
+# =====================================================================
 
+if args.basedir:
+    basedir = args.basedir
+    file = os.path.split(basedir)[-1]
+else:
+    if file.endswith("RS"):
+        basedir = f'{data_root}/data_raw/{file}/'
+    elif file.endswith("TT"):
+        basedir = f'{data_root}/data_resize/{file}/'
+    elif file.endswith("halfcropped"):
+        basedir = f'{data_root}/data_resize_cropped/{file}/'
+
+save_dir = Path(f'{data_root}/data_resize_cropped/{file}_cropped256_paddingbg')
+if not os.path.exists(f'{save_dir}'):
+    os.makedirs(f'{save_dir}')
 
 files = [path for path in glob.glob(f'{basedir}**/*', recursive=True)
          if os.path.splitext(path)[1].lower() in ['.jpg', '.jpeg', '.png']]  # path.split('.')[-1]
 print(f'Prepare data :　{basedir}')
-print('data size : ', len(files))
+print(f'Data size in {args.basedir} : {len(files):,d}')
 
+try:
+    file_bboxes = f"moth_all_bboxes_{file}"
+    bboxes_df = pd.read_csv(f'{file_bboxes}.csv', index_col=0)
+    print(f'{file_bboxes}.csv loaded ')
+except Exception as e:
+    print(e)
+    print('You should put bboxes file in here')
 
-file_bboxes = f"moth_all_bboxes_{file}"
-print(f'{file_bboxes}.csv readed ')
-bboxes_df = pd.read_csv(f'{file_bboxes}.csv', index_col=0)
+bboxes_df_drop = bboxes_df.dropna()
+print(f'Data size after dropna in {file_bboxes}: {len(bboxes_df_drop):,d}')
+
+start = args.start_idx
+end = len(bboxes_df_drop) if args.end_idx == -1 else args.end_idx
+print(f'Process range from [{start} : {end}]')
 
 # loading problemed file, it will not be output
-prob_df = pd.read_csv(f'{data_root}/problemed.csv', index_col=0)
-len(list(prob_df.img))  # 12
+try:
+    problemed_df = pd.read_csv(f'{data_root}/problemed.csv', index_col=0)
+    problemed_list = list(problemed_df.img)
+    len(problemed_list)  # 12
+except Exception as e:
+    print(e)
+    problemed_list = []
 
-# ================================================================================================
-# 依據yolo裁切出的bboxes座標點，擴大裁切範圍並輸出為指定大小，提供後續yolo重新偵測範圍
-# bboxes : (left, top, right, bottom)
-
-
-def restrict_boundry(bboxes):
-    for i in [0, 1]:
-        # reset left and top boundry
-        bboxes[i] = 0 if bboxes[i] < 0 else bboxes[i]
-    # reset right boundry
-    bboxes[2] = img.shape[1] if bboxes[2] > img.shape[1] else bboxes[2]
-    # reset bottom boundry
-    bboxes[3] = img.shape[0] if bboxes[3] > img.shape[0] else bboxes[3]
-    return bboxes
-
-
-def resize_with_padding(img, expected_size=(256, 256), fill=(255, 255, 255)):
-    img.thumbnail((expected_size[0], expected_size[1]))
-    # print(img.size)
-    delta_width = expected_size[0] - img.size[0]
-    delta_height = expected_size[1] - img.size[1]
-    pad_width = delta_width // 2
-    pad_height = delta_height // 2
-    padding = (pad_width, pad_height, delta_width -
-               pad_width, delta_height - pad_height)
-    return ImageOps.expand(img, padding, fill)
-
-
-def get_bgcolor(img, pixel_size=20):
-    img_ = np.array(img) if not isinstance(img, np.ndarray) else img
-
-    # 分別取樣取中上、左下、右下角(pixel_size * pixel_size)大小的畫素
-    h, w = img_.shape[:2]
-    center_top = img_[10:30, int(w*0.5-pixel_size/2): int(w*0.5+pixel_size/2)]
-    bottom_left = img_[-10-pixel_size:-10, : pixel_size]
-    bottom_right = img_[-10-pixel_size:-10, -pixel_size:]
-    # Image.fromarray(center_top).show()
-
-    # 將三個取樣點合在一起取平均作為背景顏色
-    pixels = np.concatenate(
-        (center_top.reshape(-1, 3), bottom_left.reshape(-1, 3), bottom_right.reshape(-1, 3)))
-    # 過濾太暗(白色為255)、偏離白灰(std)的畫素
-    pixels_filtered = np.asarray(
-        [row for row in list(pixels)
-         if np.array(row).mean() > 255*0.6 and np.array(row).std() < 10]
-    )
-
-    bg_color = np.mean(pixels_filtered, axis=0).astype(np.int16)
-    return tuple(bg_color)
 
 # ================================================================================================
 # start crop by bboxes
@@ -111,21 +96,23 @@ def get_bgcolor(img, pixel_size=20):
 
 
 # for resize bbox range
-scale_w = 0.05 if not file.endswith("RS") else 0.1
-scale_ht, scale_hb = (0.0, 0.0) if not file.endswith("RS") else (0.1, 0.1)
+scale_w = 0.1 if not file.endswith("RS") else 0.2
+scale_ht, scale_hb = (0.1, 0.1) if not file.endswith("RS") else (0.2, 0.2)
 
-for index, row in bboxes_df.dropna().iterrows():
+for idx, row in bboxes_df_drop[start:end].iterrows():
 
     fpath = row.file
-    f = os.path.split(fpath)[-1].split('.')[0]
+    fname = os.path.split(fpath)[-1].split('.')[0]
     if file.endswith("halfcropped"):
-        f = f.split('right')[0].split('left')[0]
+        fname = fname.split('right')[0].split('left')[0]
 
     # 跳過問題檔案名單
-    if f in list(prob_df.img):
-        print(f"{f} will not be cropped")
-        continue
+    if problemed_list:
+        if fname in problemed_list:
+            print(f"{fname} will not be cropped")
+            continue
 
+    # try:
     img = io.imread(fpath)          # 採用skimage讀入純陣列資料格式，避免讀取到EXIF資訊
 
     # crop depend by bbox with range expand-----------------------------------------------------------
@@ -145,7 +132,7 @@ for index, row in bboxes_df.dropna().iterrows():
     ])
 
     image = Image.fromarray(img)
-    bboxes_reset = restrict_boundry(bboxes)
+    bboxes_reset = restrict_boundry(bboxes, img)
     image_cropped = image.crop(bboxes_reset)
 
     # resize and padding------------------------------------------------------------------------------------------------
@@ -155,22 +142,23 @@ for index, row in bboxes_df.dropna().iterrows():
     # image_resized = image_cropped.resize(
     #     (width, height), resample=Image.LANCZOS)  # resized
 
-    fill = get_bgcolor(
-        image_cropped, pixel_size=20) if args.fill_bg else args.fill_color
+    bg_color = get_bgcolor(
+        image_cropped, pixel_size=5) if args.fill_bg else args.fill_color
 
     image_resized_with_padding = resize_with_padding(
-        image_cropped, (256, 256), fill=fill)
+        image_cropped, (256, 256), fill=bg_color)
 
-    # ------------------------------------------------------------------------------------------------
-
-    save_dir = f'{data_root}/data_resize_cropped/{file}_cropped256_paddingbg'
-    if not os.path.exists(f'{save_dir}'):
-        os.makedirs(f'{save_dir}')
-    # image_resized.save(f'{save_dir}/{f}_cropped.png')
-    image_resized_with_padding.save(f'{save_dir}/{f}_cropped.png')
+    image_resized_with_padding.save(f'{save_dir}/{fname}_cropped.png')
 
     print(
-        f"{100*(index+1)/len(bboxes_df.dropna()):.2f}%, {save_dir}/{f}_cropped.png' saved", end="\r")
+        f"[{idx}][{len(bboxes_df_drop):,d}] |{100*(idx+1)/len(bboxes_df_drop):.2f}%, {save_dir}/{fname}_cropped.png' saved", end="\r")
+
+    # except FileNotFoundError as e:
+    #     continue
+    # except Exception as e:
+    #     print(e)
+    #     break
+
 
 print(f"\n{save_dir} Cropping Finished\t")
 

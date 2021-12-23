@@ -21,8 +21,14 @@ parser = argparse.ArgumentParser(
 )
 parser.add_argument("--file", default='SJRS',
                     type=str, help='"CATT", "CARS" or "SJTT", "SJRS" or "SJRS_halfcropped", "CARS_halfcropped"')
-parser.add_argument("--data_root", '-d', default='../data',
+parser.add_argument("--data_root", '-r', default='../data',
                     type=str, help='where the data directory store')
+parser.add_argument("--basedir", '-dir', default='',
+                    type=str, help='where the data directory to predict')
+parser.add_argument('--start_idx', default=0, type=int,
+                    help="Manual epoch number (useful on restarts)")
+parser.add_argument('--end_idx', default=-1, type=int,
+                    help="Manual epoch number (useful on restarts)")
 
 args = parser.parse_args()
 
@@ -33,12 +39,17 @@ yolo = YOLO()
 file = args.file
 data_root = args.data_root
 
-if file.endswith("RS"):
-    basedir = f'{data_root}/data_raw/{file}/'
-elif file.endswith("TT"):
-    basedir = f'{data_root}/data_resize/{file}/'
-elif file.endswith("halfcropped"):
-    basedir = f'{data_root}/data_resize_cropped/{file}/'
+if args.basedir:
+    basedir = args.basedir
+    file = os.path.split(basedir)[-1]
+else:
+    if file.endswith("RS"):
+        basedir = f'{data_root}/data_raw/{file}/'
+    elif file.endswith("TT"):
+        basedir = f'{data_root}/data_resize/{file}/'
+    elif file.endswith("halfcropped"):
+        basedir = f'{data_root}/data_resize_cropped/{file}/'
+
 
 files_ = [path for path in glob.glob(f'{basedir}**/*', recursive=True)
           if os.path.splitext(path)[1].lower() in ['.jpg', '.jpeg', '.png']]  # path.split('.')[-1]
@@ -65,10 +76,16 @@ if not os.path.exists(f'{save_dir}/cropped'):
     os.makedirs(f'{save_dir}/cropped')
 print(f'save_dir :　{save_dir}')
 
+
+start = args.start_idx
+end = len(files_) if args.end_idx == -1 else args.end_idx
+print(f'Process range from [{start} : {end}]')
+
+
 files = []
 bboxes_strs = []
 start_time = time.time()
-for index, fpath in enumerate(files_):
+for index, fpath in enumerate(files_[start:end]):
 
     # fpath = basedir + f
     f = fpath.split('/')[-1]
