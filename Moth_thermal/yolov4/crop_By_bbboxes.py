@@ -41,8 +41,8 @@ data_root = Path(args.data_root)
 
 # =====================================================================
 # test
-args.basedir = Path('../../Moth_Specimen_TESRI/tersi_imgs_forYY')
-args.fill_bg = True
+# args.basedir = Path('../../Moth_Specimen_TESRI/tersi_imgs_forYY')
+# args.fill_bg = True
 # =====================================================================
 
 if args.basedir:
