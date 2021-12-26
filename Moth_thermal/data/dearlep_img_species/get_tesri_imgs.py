@@ -39,10 +39,8 @@ start = args.start_idx
 end = len(df_imgpath) if args.end_idx == -1 else args.end_idx
 print(f'slice from [{start} : {end}]')
 
-
 col_dict = {}
 for column in df_imgpath.columns.values:
-    print(column)
     if column.lower() == 'family':
         col_dict['family'] = column
     elif column.lower() == 'species' :
@@ -53,9 +51,9 @@ for column in df_imgpath.columns.values:
         col_dict['path'] = column
 
 df_imgpath = df_imgpath[list(col_dict.values())]
-assert df_imgpath.columns.values.size == 4, f'There are problems about columns :{df_imgpath.columns.values}'
+assert df_imgpath.columns.values.size == 4, f'There are problems about columns : {df_imgpath.columns.values}'
 
-error_log =  dir_meta.joinpath(f'{path_file.stem}_download_fail_log.txt')
+error_log =  dir_meta.joinpath(f'logging_download_fail_{path_file.stem}.txt')
 
 
 start_time = time.time()
