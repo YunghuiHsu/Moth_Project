@@ -77,8 +77,8 @@ print(f'Idx Process range from [{start} : {end}]')
 
 # loading problemed file, it will not be output
 try:
-    problemed_df = pd.read_csv(f'{data_root}/problemed.csv', index_col=0)
-    problemed_list = list(problemed_df.img)
+    problemed_df = pd.read_csv(data_root.joinpath('Problemed_data', 'problemed.csv'), index_col=0)
+    problemed_list = list(problemed_df.fname)
     len(problemed_list)  # 12
 except Exception as e:
     print(e)
