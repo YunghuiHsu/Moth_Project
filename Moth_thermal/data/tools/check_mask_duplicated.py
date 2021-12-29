@@ -65,9 +65,10 @@ import shutil
 # dir_mask_waiting = Path(f'../../data/label_waiting_postprocess')
 
 # data\data_for_Sup_predict\SJRS_for_predict、SJRS_for_predict、MCTT_for_predict
-# file = 'SJRS_for_predict'
+file = 'CARS'
 # dir_target = Path(f'../../data/data_for_Sup_predict/{file}')
-dir_target = Path('../../data/data_for_Sup_train/imgs')
+# dir_target = Path('../../data/data_for_Sup_train/imgs')
+dir_target = Path(f'../data_resize_cropped/{file}_cropped256_paddingbg')
 imgs_target = list(dir_target.glob('*.png'))
 print('imgs_target : ', len(imgs_target))
 imgs_target_name = {path.stem for path in imgs_target}
@@ -84,12 +85,14 @@ except_ = set(imgs_target_name) - set(imgs_masks_names)
 print('imgs_target & imgs_masks :', len(inter_))
 print('imgs_target - imgs_masks :', len(except_))
 
-save_dir = Path(f'data/tmp/target_tmp')
+# save_dir = Path(f'data/tmp/target_tmp')
 save_dir = Path(f'../../data/data_for_Sup_predict/final')
 save_dir.mkdir(parents=True, exist_ok=True)
 
+
+# 刪除重複(交集)
 error_name = {}
-for idx, img_name in enumerate(except_):
+for idx, img_name in enumerate(inter_):
     # img_name = path.name.split('。')[0].split('-')[0].split('.')[0]
     path = dir_target.joinpath(img_name + '.png')
     try:
@@ -102,6 +105,23 @@ for idx, img_name in enumerate(except_):
     # io.imsave(save_dir.joinpath(img_name + '.png'), img)
 
     print(f'{idx:3d}, {img_name}')
+
+# 儲存差異(差集)
+for idx, img_name in enumerate(except_):
+    # img_name = path.name.split('。')[0].split('-')[0].split('.')[0]
+    path = dir_target.joinpath(img_name + '.png')
+    try:
+        # path.unlink()
+        img = io.imread(path)
+    except OSError as e:
+        print(f"Error:{ e.strerror}")
+        error_name[idx] = img_name
+
+    io.imsave(save_dir.joinpath(img_name + '.png'), img)
+
+    print(f'{idx:3d}, {img_name}')
+
+
 
 # =================================================================================================
 # Transform img_rmbg from mask

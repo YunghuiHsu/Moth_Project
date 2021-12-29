@@ -167,14 +167,14 @@ print(err_name)
 
 ## dir_mask = './bk_mask_manul/'
 dir_mask = Path(
-    '../data/data_for_Sup_train/masks_211105')
+    '../label_waiting_postprocess\masks_picked_1229')
 
 imgs_mask = list(dir_mask.glob('*.png'))
 print(len(imgs_mask))
 # imgs_mask = [path for path in dir_mask.iterdir() if "_mask" in path.stem]
 
-# dir_save = dir_mask.joinpath('mask_rmbg')
-dir_save = Path('tmp/imgs_rmbg')
+dir_save = dir_mask.joinpath('mask_rmbg')
+# dir_save = Path('tmp/imgs_rmbg')
 dir_save.mkdir(parents=True, exist_ok=True)
 
 
@@ -201,13 +201,13 @@ def img_rmbg_fill(black_mask: np.ndarray, img: np.ndarray, color: str = 'blue'):
 
 
 #
-dir_benchmarks = Path('../data/data_for_Sup_predict/benchmarks').glob('*.png')
-names_benchmarks = [path.stem for path in dir_benchmarks]
-len(names_benchmarks)
+# dir_benchmarks = Path('../data/data_for_Sup_predict/benchmarks').glob('*.png')
+# names_benchmarks = [path.stem for path in dir_benchmarks]
+# len(names_benchmarks)
 
-imgs_mask = [path for path in imgs_mask if path.stem in names_benchmarks]
-len(imgs_mask)
-assert len(names_benchmarks) == len(imgs_mask)
+# imgs_mask = [path for path in imgs_mask if path.stem in names_benchmarks]
+# len(imgs_mask)
+# assert len(names_benchmarks) == len(imgs_mask)
 
 
 for idx, path in enumerate(imgs_mask):
@@ -244,20 +244,22 @@ for idx, path in enumerate(imgs_mask):
     io.imsave(save_path_rmbg, img_rmbg)
     print(idx, img_rmbg_name, 'saved')
 
-    # io.imsave(dir_save.joinpath(fname + '.png'), origin_img)
-    # print(idx, fname, 'saved')
+    io.imsave(dir_save.joinpath(fname + '.png'), origin_img)
+    print(idx, fname, 'saved')
 
 # ============================================================================================
 # convert masks rgb(w,h,c)  to grey(w,h)
 # ============================================================================================
 
 
-dir_mask = Path('../../data/label_waiting_postprocess/mask_picked_211124_2')
+dir_mask = Path('../../data/label_waiting_postprocess/mask_catt_updated')
+path_mask = set(dir_mask.glob('*.png'))
+len(path_mask)
 
 dir_mask_tmp = dir_mask.joinpath('masks_tmp')
 dir_mask_tmp.mkdir(parents=True, exist_ok=True)
 
-for i, path in enumerate(dir_mask.glob('*.png')):
+for i, path in enumerate(path_mask):
     mask_name = path.stem.split('_cropped')[0] + '_cropped'
     mask_ = io.imread(path, as_gray=True)  # (h,w) uint8
 
