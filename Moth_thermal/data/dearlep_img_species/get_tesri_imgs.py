@@ -76,7 +76,7 @@ for idx, rows in df_imgpath.iloc[start: end].iterrows():
         print(f'\n\t{error_404}')
 
         with open(error_log, 'a') as file:
-            file.write(f'{idx}, {id}, {path}\n')
+            file.write(f'{idx},{id},{path}\n')
         print(f'\n\tgiveup : {idx} : {id}')
 
     except Exception as e:
@@ -91,7 +91,7 @@ for idx, rows in df_imgpath.iloc[start: end].iterrows():
             c += 1
         else:
             with open(error_log, 'a') as file:
-                file.write(f'{idx}, {id}, {path}\n')
+                file.write(f'{idx},{id},{path}\n')
             print(f'\n\tgiveup : {idx} : {id}')
 
 print('\nFinished')

@@ -17,7 +17,7 @@ parser = argparse.ArgumentParser(
     description='Assign imgs to different directorys by taxon'
 )
 
-parser.add_argument('--file', default='meta/MC_tersi_tagnull_imgpath.csv')
+parser.add_argument('--file', default='meta/MC_tesri_tagnull_imgpath.csv')
 parser.add_argument('--dir_save', '-save', default='./tersi_for_check')
 parser.add_argument("--dir_target", '-dir', default='./tesri_img',
                     type=str, help='where the data directory to predict')
@@ -38,7 +38,6 @@ def copyfile(file:str, dir_)->None:
     try:
         shutil.copyfile(dir_target.joinpath(file), 
                         dir_.joinpath(file))
-        print(f'\t{dir_.joinpath(file)} copied\t\t\t\t\t', end='\r')
                         
     except shutil.SameFileError:
         print("\nSource and destination represents the same file.")
@@ -46,7 +45,6 @@ def copyfile(file:str, dir_)->None:
         print('\n',err)
 
 
-dir_meta = Path('./meta')
 dir_save = Path(args.dir_save)
 suffix = args.img_suffix
 
@@ -83,26 +81,27 @@ print(f'data size delected : {len(df_file_select) :,d}')
 
 
 start_time = time.time()
-
-
 for idx, (_, rows) in enumerate(df_file_select.iterrows()) :
     family,  species, id = rows
     file = id + suffix
-    print(idx, file)
     
     dir_ = dir_save.joinpath(family,  species)
-    if not dir_.exists :
-        dir_.mkdir(exist_ok=True, parents=True)
+    if not dir_.exists() :
+        dir_.mkdir(exist_ok=True,parents=True)
         
     copyfile(file, dir_)
-    # break
+
     time_passed = time.time()-start_time
-    print(f"i: {idx+1:4d}, {100*(idx)/len(df_file_select):.2f}% \
-                | Time : {time_passed//60:.0f}m, {time_passed%60:.0f}s\t", end='\r')
+    
+    info = f'[{idx+1:4d}/{len(df_file_select):,d}], {100*(idx)/len(df_file_select):.1f}%'
+    info += f' | Time : {time_passed//60:.0f}m, {time_passed%60:.0f}s'
+    info += f' | {dir_.joinpath(file)} copied\t\t'
+    
+    print(info, end='\r')
 
 
-print('Finished')
 
+print('\nFinished')
 
 # ------------------------------------------------------------------------------------------------
 # assign by sep number
