@@ -18,9 +18,9 @@ parser.add_argument('--gpu', '-g', dest='gpu', default='1')
 
 # data
 parser.add_argument('--dir_masks', '-m', dest='masks',
-                    default='../../data/data_for_Sup_train/masks')
+                    default='../data_for_Sup_train/masks')
 parser.add_argument('--dir_origin', '-o', dest='origin',
-                    default='../../data/origin')
+                    default='../origin')
 parser.add_argument('--dir_save', '-s', dest='save',
                     default='../../vsc/data/moth_thermal_rmbg_padding_256')
 parser.add_argument('--postfix', '-p', dest='postfix', type=str,
@@ -84,14 +84,15 @@ for idx, path in enumerate(paths_masks):
 
     # prepare data to [0,255], channel=3
     img_path = dir_origin.joinpath(fname + '.png')
-    origin_img = io.imread(img_path)
-    if not origin_img[..., 0].shape == (256, 256):
-        # print(f'origin_img need resize: {origin_img.shape} ')
-        origin_img = resize(origin_img, (256, 256))
-        origin_img_255 = (origin_img)*255
-        origin_img = origin_img_255.astype(np.uint8)
-
+    
     try:
+        origin_img = io.imread(img_path)
+        if not origin_img[..., 0].shape == (256, 256):
+            # print(f'origin_img need resize: {origin_img.shape} ')
+            origin_img = resize(origin_img, (256, 256))
+            origin_img_255 = (origin_img)*255
+            origin_img = origin_img_255.astype(np.uint8)
+    
         mask = io.imread(msk_path, as_gray=True)
     except Exception as e:
         print(f"Error : {e}")

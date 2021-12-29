@@ -55,7 +55,7 @@ print(len(imgs_origin))
 
 # file = 'rgb_background_for_fill'  # file_for_rmbg
 dir_mask = Path(
-    f'data/label_waiting_postprocess/mask_waitinting_for_posrprocess/for_removebg')
+    f'../label_waiting_postprocess/mask_waitinting_for_posrprocess/for_removebg')
 imgs_mask = list(dir_mask.glob('*.png'))
 print(f'file size : {len(imgs_mask)}')
 
@@ -73,14 +73,14 @@ for idx, path in enumerate(imgs_mask):
         # convert all non black(0) to white(255)
         img_mask = np.where(mask_ < 128, 0, 255).astype('uint8')
 
-        save_name = img_name + '_mask_removeweb' + '.png'
+        save_name = img_name + '_mask' + '.png'
         save_path = dir_save.joinpath(save_name)
         io.imsave(save_path, img_mask)
         print(idx, img_name, 'saved')
 
         # loading original img by img_name
-        path_origin = dir_origin.joinpath(img_name + '.png')
-        img_origin = io.imread(path_origin)
+        # path_origin = dir_origin.joinpath(img_name + '.png')
+        # img_origin = io.imread(path_origin)
 
     except FileNotFoundError as err:
         err_name.append(img_name)
@@ -247,65 +247,6 @@ for idx, path in enumerate(imgs_mask):
     # io.imsave(dir_save.joinpath(fname + '.png'), origin_img)
     # print(idx, fname, 'saved')
 
-
-# ============================================================================================
-# 將mask做膨脹-侵蝕、邊緣平滑、改善邊緣缺失
-# ============================================================================================
-
-
-dir_mask = Path(
-    'data/label_waiting_postprocess/mask_waitinting_for_posrprocess/mask_for_dilate')
-imgs_mask = list(dir_mask.glob('*.png'))
-print(f'file size : {len(imgs_mask)}')
-
-dir_save = dir_mask.joinpath('mask_convert')
-dir_save.mkdir(exist_ok=True)
-
-
-# mask = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
-# Image.fromarray(img).show()
-# _, img = cv2.threshold(img, 127, 255, 0)
-# Image.fromarray(img).show()
-
-
-for idx, path in enumerate(imgs_mask):
-    # get path
-    msk_path = path
-    fname = path.stem.split('_cropped')[0] + '_cropped'
-
-    mask = io.imread(msk_path, as_gray=True)
-
-    # dilate & erode ------------------------------------------------------------
-    iterations = 1
-    ksize = (3, 3)
-    kernel_ELLIPSE = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, ksize=ksize)
-    mask = cv2.dilate((mask), kernel_ELLIPSE, iterations=iterations)
-    mask = cv2.erode(mask, kernel_ELLIPSE, iterations=(iterations-1))
-    # ----------------------------------------------------------------------------
-
-    # smooth ------------------------------------------------------------
-    # mask_pil = Image.open(msk_path)
-    # mask_smooth = mask_pil.filter(ImageFilter.ModeFilter(size=3))
-    # mask = np.array(mask_smooth)
-    # img_mask_name = path.stem + '_smooth' + '.png'
-    # mask_smooth.save(dir_save.joinpath(img_mask_name+ '_smooth' +'.png'))
-    # ----------------------------------------------------------------------------
-
-    # save mask
-    img_mask_name = path.stem + '_dilate' + '.png'
-    save_path_mask = dir_save.joinpath(img_mask_name)
-    io.imsave(save_path_mask, mask)
-
-    print(idx, img_mask_name, 'saved')
-
-    # loading original img by img_name
-    # img_path = dir_origin.joinpath(fname + '.png')
-    # origin_img = io.imread(img_path)
-    # save image
-    # io.imsave(dir_save.joinpath(fname + '.png'), origin_img)
-    # print(idx, fname, 'saved')
-
-
 # ============================================================================================
 # convert masks rgb(w,h,c)  to grey(w,h)
 # ============================================================================================
@@ -361,3 +302,63 @@ for path in dir_imgs_batch_arg.iterdir():
     mask = io.imread(path_mask)
     io.imsave(dir_masks_batch_arg.joinpath(name + '.png'), mask)
     print(f'{name}.png saved')
+
+
+
+# ============================================================================================
+# 將mask做膨脹-侵蝕、邊緣平滑、改善邊緣缺失
+# ============================================================================================
+
+
+# dir_mask = Path(
+#     'data/label_waiting_postprocess/mask_waitinting_for_posrprocess/mask_for_dilate')
+# imgs_mask = list(dir_mask.glob('*.png'))
+# print(f'file size : {len(imgs_mask)}')
+
+# dir_save = dir_mask.joinpath('mask_convert')
+# dir_save.mkdir(exist_ok=True)
+
+
+# # mask = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
+# # Image.fromarray(img).show()
+# # _, img = cv2.threshold(img, 127, 255, 0)
+# # Image.fromarray(img).show()
+
+
+# for idx, path in enumerate(imgs_mask):
+#     # get path
+#     msk_path = path
+#     fname = path.stem.split('_cropped')[0] + '_cropped'
+
+#     mask = io.imread(msk_path, as_gray=True)
+
+#     # dilate & erode ------------------------------------------------------------
+#     iterations = 1
+#     ksize = (3, 3)
+#     kernel_ELLIPSE = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, ksize=ksize)
+#     mask = cv2.dilate((mask), kernel_ELLIPSE, iterations=iterations)
+#     mask = cv2.erode(mask, kernel_ELLIPSE, iterations=(iterations-1))
+#     # ----------------------------------------------------------------------------
+
+#     # smooth ------------------------------------------------------------
+#     # mask_pil = Image.open(msk_path)
+#     # mask_smooth = mask_pil.filter(ImageFilter.ModeFilter(size=3))
+#     # mask = np.array(mask_smooth)
+#     # img_mask_name = path.stem + '_smooth' + '.png'
+#     # mask_smooth.save(dir_save.joinpath(img_mask_name+ '_smooth' +'.png'))
+#     # ----------------------------------------------------------------------------
+
+#     # save mask
+#     img_mask_name = path.stem + '_dilate' + '.png'
+#     save_path_mask = dir_save.joinpath(img_mask_name)
+#     io.imsave(save_path_mask, mask)
+
+#     print(idx, img_mask_name, 'saved')
+
+#     # loading original img by img_name
+#     # img_path = dir_origin.joinpath(fname + '.png')
+#     # origin_img = io.imread(img_path)
+#     # save image
+#     # io.imsave(dir_save.joinpath(fname + '.png'), origin_img)
+#     # print(idx, fname, 'saved')
+
