@@ -27,6 +27,7 @@ import wandb
 from utils.dataset import ImageDatasetFromFile, ImageDatasetFromCache
 from utils.networks import VSC
 from utils.average_meter import AverageMeter
+from utils.utils import str_to_list, load_model, is_image_file, save_log, log_rec_images, save_checkpoint
 #from model import AAResNet50NoTop
 
 
@@ -92,99 +93,7 @@ parser.add_argument('--parallel', action='store_true', default=False,
 parser.add_argument('--manualSeed', type=int, help='manual seed')
 #parser.add_argument("--pretrained", default='../vsc_wwlep_glance/model/vsc/model_local_epoch_3000_iter_0.pth', type=str, help="path to pretrained model (default: none)")
 
-
 # =======================================================================================================================
-
-
-def load_model(model, optims, pretrained):
-    weights = torch.load(pretrained)
-
-    try:
-        pretrained_model_dict = weights['model'].state_dict()
-    except:
-        pretrained_model_dict = weights
-    model_dict = model.state_dict()
-    pretrained_model_dict = {
-        k: v for k, v in pretrained_model_dict.items() if k in model_dict}
-    model_dict.update(pretrained_model_dict)
-    model.load_state_dict(model_dict)
-
-    if len(optims) > 0:
-        pretrained_optims = weights['optims']
-        assert(isinstance(pretrained_optims, list))
-        for optim_idx, pretrained_optim in enumerate(pretrained_optims):
-            pretrained_optim_dict = pretrained_optim.state_dict()
-            optim_dict = optims[optim_idx].state_dict()
-            pretrained_optim_dict = {
-                k: v for k, v in pretrained_optim_dict.items() if k in optim_dict}
-            optim_dict.update(pretrained_optim_dict)
-            optims[optim_idx].load_state_dict(optim_dict)
-
-
-def save_checkpoint(model, optims, epoch):
-    model_out_path = f"pretrained/vsc_epoch_{epoch}.pth"
-    state = {"epoch": epoch, "model": model, "optims": optims}
-    torch.save(state, model_out_path)
-    print(f"=========> Checkpoint saved to {model_out_path}")
-    return model_out_path
-
-
-def str_to_list(x):
-    return [int(xi) for xi in x.split(',')]
-
-
-def is_image_file(filename):
-    return any(filename.lower().endswith(extension) for extension in [".jpg", ".png", ".jpeg", ".bmp"])
-
-
-def record_scalar(writer, scalar_list, scalar_name_list, cur_iter):
-    scalar_name_list = scalar_name_list[1:-1].split(',')
-    for idx, item in enumerate(scalar_list):
-        writer.add_scalar(scalar_name_list[idx].strip(' '), item, cur_iter)
-
-
-def record_image(writer, image_list, cur_iter):
-    image_to_show = torch.cat(image_list, dim=0)
-    writer.add_image('visualization', make_grid(
-        image_to_show, nrow=opt.nrow), cur_iter)
-
-
-def save_log(log_save_path, epoch, am_rec, am_prior, cur_iter: int = 0):
-    with open(log_save_path, 'a') as loss_log:
-        loss_log.write(
-            ",".join([
-                str(epoch),
-                str(cur_iter),
-                f'{am_rec.avg:.4f}',
-                f'{am_prior.avg:.4f}',
-                # f'{am_levelN.avg:.4f}',
-                '\n'
-            ])
-        )
-
-
-def log_rec_images(real: torch.tensor, rec: torch.tensor, fake: torch.tensor = None,
-                   flag: str = 'train', resize: int = 128, save: bool = True, return_: bool = False):
-
-    if flag == 'train':
-        images_stack = torch.cat(
-            [real[:2*(opt.nrow)], rec[:2*(opt.nrow)], fake[:2*(opt.nrow)]], dim=0)
-        save_path = f'{opt.outf}/vsc/image_epoch_{epoch:05d}.jpg'
-        save_path_up = f'{opt.outf}/image_up_to_date.jpg'
-    elif flag == 'valid':
-        images_stack = torch.cat([real, rec], dim=0)
-        save_path = f'{opt.outf}/vsc_valid/benchmarks_epoch_{epoch:05d}.jpg'
-
-    images_stack = torchvision.transforms.Resize(
-        resize)(images_stack) if resize else images_stack
-
-    if save:
-        vutils.save_image(images_stack.data.cpu(), save_path, nrow=opt.nrow)
-        if flag == 'train':
-            vutils.save_image(images_stack.data.cpu(),
-                              save_path_up, nrow=opt.nrow)
-    if return_:
-        return images_stack
 
 
 def main():
@@ -246,12 +155,12 @@ def main():
     if os.path.isfile(pretrained_default):
         if opt.start_epoch > 0:
             print("Loading default pretrained {opt.start_epoch}...")
-            load_model(vsc_model, optimizers, pretrained_default)
+            load_model(vsc_model, pretrained_default, optimizers)
         else:
             print("Start training from scratch...")
     elif opt.pretrained:
         print("Loading pretrained from {opt.pretrained:s}...")
-        load_model(vsc_model, optimizers, opt.pretrained)
+        load_model(vsc_model, pretrained_default, optimizers)
 
     # -----------------load dataset--------------------------
     if opt.dataroot.endswith('npz' or 'npy'):
@@ -349,17 +258,15 @@ def main():
         # save rec_imgs
         if epoch % 5 == 0:
             rec_imgs = log_rec_images(
-                real, rec, fake, flag='train', resize=128, save=False, return_=True)
+                epoch, real, rec, fake, save=False, return_=True)
             experiment.log({
                 'images': wandb.Image(rec_imgs, caption="1st row: Real, 2nd row: Rec, 3nd row: Fake"),
             }, commit=False)
 
         if epoch < 100 and epoch % 10 == 0:
-            rec_imgs = log_rec_images(
-                real, rec, fake, flag='train', resize=128, save=True)
+            log_rec_images(epoch, real, rec, fake, outf=dir_save)
         elif epoch >= 100 and epoch % 100 == 0:
-            rec_imgs = log_rec_images(
-                real, rec, fake, flag='train', resize=128, save=True)
+            log_rec_images(epoch, real, rec, fake, outf=dir_save)
 
     # ----------------Train func
 
@@ -370,17 +277,16 @@ def main():
 
             if epoch % 5 == 0:
                 rec_imgs = log_rec_images(
-                    real, rec, fake=None, flag='valid', resize=128, save=False, return_=True)
+                    epoch, real, rec, flag='valid', save=False, return_=True)
                 experiment.log({
                     'benchmarks': wandb.Image(rec_imgs, caption="1st row: Real, 2nd row: Rec, 3nd row: Fake"),
                 })
 
             if epoch < 100 and epoch % 10 == 0:
-                log_rec_images(real, rec, fake=None,
-                               flag='valid', resize=128, save=True)
+                log_rec_images(
+                    epoch, real, rec, flag='valid', outf=dir_save)
             elif epoch >= 100 and epoch % 100 == 0:
-                log_rec_images(real, rec, fake=None,
-                               flag='valid', resize=128, save=True)
+                log_rec_images(epoch, real, rec, flag='valid', outf=dir_save)
 
     # =======================================================================================================================
 
