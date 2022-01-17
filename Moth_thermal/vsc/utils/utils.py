@@ -37,8 +37,8 @@ def record_image(writer, image_list, cur_iter, nrow=8):
 #     model.load_state_dict(model_dict)
 
 
-def load_model(model, pretrained, optims: str = None):
-    weights = torch.load(pretrained)
+def load_model(model, pretrained, optims: str = None, map_location:str = None):
+    weights = torch.load(pretrained, map_location=map_location)
 
     try:
         pretrained_model_dict = weights['model'].state_dict()
