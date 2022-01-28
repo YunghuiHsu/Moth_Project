@@ -51,7 +51,7 @@ else:
         basedir = f'{data_root}/data_resize_cropped/{file}/'
 
 
-files_ = [path for path in glob.glob(f'{basedir}**/*', recursive=True)
+files_ = [path for path in glob.glob(f'{basedir}/**/*', recursive=True)
           if os.path.splitext(path)[1].lower() in ['.jpg', '.jpeg', '.png']]  # path.split('.')[-1]
 print(f'Prepare data :　{basedir}')
 print('data size : ', len(files_))
@@ -101,7 +101,7 @@ for index, fpath in enumerate(files_[start:end]):
     for idx_, cim in enumerate(cropped_imgs):
         cim.thumbnail((256, 256))
         # cim.save('./predicts640wHalfPenalty/cropped/%s_%d.jpg' % ('.'.join(f.split('.')[:-1]), idx_))
-        cim.save(
+        cim.convert('RGB').save(
             f"{save_dir}/cropped/{'.'.join(f.split('.')[:-1])}_{idx_}.jpg")
 
     files.append(fpath)
