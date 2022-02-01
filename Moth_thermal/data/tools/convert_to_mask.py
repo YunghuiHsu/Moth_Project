@@ -55,7 +55,7 @@ print(len(imgs_origin))
 
 # file = 'rgb_background_for_fill'  # file_for_rmbg
 dir_mask = Path(
-    f'../label_waiting_postprocess/mask_waitinting_for_posrprocess/for_removebg')
+    f'../label_waiting_postprocess/mask_removebg')
 imgs_mask = list(dir_mask.glob('*.png'))
 print(f'file size : {len(imgs_mask)}')
 
@@ -252,7 +252,7 @@ for idx, path in enumerate(imgs_mask):
 # ============================================================================================
 
 
-dir_mask = Path('../../data/label_waiting_postprocess/mask_catt_updated')
+dir_mask = Path('../label_waiting_postprocess/masks_updated_220201')
 path_mask = set(dir_mask.glob('*.png'))
 len(path_mask)
 
@@ -275,7 +275,10 @@ dir_img = dir_mask.joinpath('imgs')
 dir_img.mkdir(exist_ok=True, parents=True)
 
 # ## prepare dir_img by dir_mask
-dir_ori = Path('../../data/origin')
+dir_ori = Path('../origin')
+img_ori = [path.stem for path in list(dir_ori.glob('*.png'))]
+
+
 for i, path in enumerate(dir_mask.iterdir()):
     if not path.name.endswith('.png'):
         continue
@@ -304,7 +307,6 @@ for path in dir_imgs_batch_arg.iterdir():
     mask = io.imread(path_mask)
     io.imsave(dir_masks_batch_arg.joinpath(name + '.png'), mask)
     print(f'{name}.png saved')
-
 
 
 # ============================================================================================
@@ -363,4 +365,3 @@ for path in dir_imgs_batch_arg.iterdir():
 #     # save image
 #     # io.imsave(dir_save.joinpath(fname + '.png'), origin_img)
 #     # print(idx, fname, 'saved')
-
