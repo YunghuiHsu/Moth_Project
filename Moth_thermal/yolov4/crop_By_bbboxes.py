@@ -18,16 +18,16 @@ parser = argparse.ArgumentParser()
 # parser.add_argument('--save_dir', default='model/Unsup_rmbg')
 parser.add_argument("--file", default="SJRS",
                     type=str, help='"CATT", "CARS" or "SJTT", "SJRS" or "SJRS_halfcropped", "CARS_halfcropped"')
-parser.add_argument("--fill_bg", action='store_true', default=False,
-                    help="whether to fill padding with backgroung color")
-parser.add_argument("--fill_color", default=(255, 255, 255),
-                    type=tuple, help='color to be filled for padding')
 parser.add_argument("--data_root", '-d', default='../data',
                     type=str, help='where the data directory store')
 # parser.add_argument('--halfcrop', '-hc', action='store_true',
 #                     help='whether to crop data if bboxes is null. when data ')
 parser.add_argument("--basedir", '-dir', default='',
-                    type=str, help='where the data directory to predict')
+                    type=str, help='where the data directory to predict. If setted, setting of "--file" and "--data_root" will be override')
+parser.add_argument("--fill_bg", action='store_true', default=False,
+                    help="Fill padding with backgroung color")
+parser.add_argument("--fill_color", default=(255, 255, 255),
+                    type=tuple, help='color to be filled for padding')
 parser.add_argument('--start_idx', default=0, type=int,
                     help="Manual epoch number (useful on restarts)")
 parser.add_argument('--end_idx', default=-1, type=int,
@@ -42,7 +42,8 @@ data_root = Path(args.data_root)
 
 if args.basedir:
     basedir = args.basedir
-    file = os.path.split(basedir)[-1]
+    basedir_ = os.path.dirname(basedir)
+    file = os.path.split(basedir_)[-1]
 else:
     if file.endswith("RS"):
         basedir = f'{data_root}/data_raw/{file}/'
@@ -109,6 +110,7 @@ for idx, row in bboxes_df_drop[start:end].iterrows():
 
     # try:
     img = io.imread(fpath)          # 採用skimage讀入純陣列資料格式，避免讀取到EXIF資訊
+    img = img[:,:,:3] if img.shape[-1]==4 else img     # 僅讀取RGBA 前三通道。 
 
     # crop depend by bbox with range expand-----------------------------------------------------------
     bboxes_ = np.asarray([float(i) for i in row.bboxes.split(',')])

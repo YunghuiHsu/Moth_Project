@@ -24,7 +24,7 @@ parser.add_argument("--file", default='SJRS',
 parser.add_argument("--data_root", '-r', default='../data',
                     type=str, help='where the data directory store')
 parser.add_argument("--basedir", '-dir', default='',
-                    type=str, help='where the data directory to predict')
+                    type=str, help='where the data directory to predict. If setted, setting of "--file" and "--data_root" will be override')
 parser.add_argument('--start_idx', default=0, type=int,
                     help="Manual epoch number (useful on restarts)")
 parser.add_argument('--end_idx', default=-1, type=int,
@@ -41,7 +41,8 @@ data_root = args.data_root
 
 if args.basedir:
     basedir = args.basedir
-    file = os.path.split(basedir)[-1]
+    basedir_ = os.path.dirname(basedir)
+    file = os.path.split(basedir_)[-1]
 else:
     if file.endswith("RS"):
         basedir = f'{data_root}/data_raw/{file}/'
