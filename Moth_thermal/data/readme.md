@@ -11,3 +11,5 @@
     - 根據標本翅膀部位的hsv做分群產出label(get_imgs_label_byHSV.py)
   - mask後處理(Postprocess.py)
 
+#### data/meta_thermal_rangesize
+- meta data清理與對齊
