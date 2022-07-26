@@ -10,3 +10,4 @@
 
 ## Training result(embedding) exploring
 - `explore_LatentSpace.ipynb`
+
