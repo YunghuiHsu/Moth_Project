@@ -6,7 +6,7 @@ Using webcrawler to obtain a dataset of moth specimens from Taiwan
 ## scripts of webcrawler
 - `get_tesri_species.ipynb` 
 
-###  Based on the species list in 'tesri_species_list.csv'
-- Based on the species list in `'tesri_species_list.csv'`, create a path to the files to be captured
+###  Species list based on the  in 'tesri_species_list.csv'
+- create a path to the files to be captured
   - Total:  69,768 files
   - Get :   69,664 files  actually
