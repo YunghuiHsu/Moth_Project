@@ -29,5 +29,5 @@
 
 - Training result(embeddings) exploring
     - * last version of vsc model and latent vectors
-        - in `vsc/latent_space/vsc_epoch_70950/`
+        - in ```vsc/latent_space/vsc_epoch_70950/```
     - `explore_LatentSpace.ipynb`
