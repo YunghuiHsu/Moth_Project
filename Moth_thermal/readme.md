@@ -28,4 +28,6 @@
     - 使用的Autoencoder版本為 : [Variational Sparse Coding](https://github.com/ftonolini45/Variational_Sparse_Coding) 
 
 - Training result(embeddings) exploring
+    - * last version of vsc model and latent vectors
+        - in `vsc/latent_space/vsc_epoch_70950/`
     - `explore_LatentSpace.ipynb`
