@@ -26,6 +26,7 @@
 #### vsc/
 - 使用去背的鱗翅目標本影像作為材料，進行Autoencoder模型訓練
     - 使用的Autoencoder版本為 : [Variational Sparse Coding](https://github.com/ftonolini45/Variational_Sparse_Coding) 
+    - [Variational Sparse Coding (VSC)論文筆記](https://hackmd.io/@YungHuiHsu/HJN5IL2gs)
 
 - Training result(embeddings) exploring
     - * last version of vsc model and latent vectors
