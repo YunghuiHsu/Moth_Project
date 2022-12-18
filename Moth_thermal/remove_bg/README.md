@@ -1,4 +1,4 @@
-- detail process in : ［Background Remove for Moth Project］（https://hackmd.io/@YungHuiHsu/Hkr3R3wV9） 
+detail process in : ［Background Remove for Moth Project](https://hackmd.io/@YungHuiHsu/Hkr3R3wV9） 
 
 ## 2.1 非監督式方法(Unsupervied Segmentation)
 - [Moth_thermal/remove_bg/Unsup_train.py](https://github.com/YunghuiHsu/Moth_Project/blob/main/Moth_thermal/remove_bg/Unsup_train.py)
