@@ -1,7 +1,14 @@
+- detail process in : ［Background Remove for Moth Project］（https://hackmd.io/@YungHuiHsu/Hkr3R3wV9） 
+
+## 2.1 非監督式方法(Unsupervied Segmentation)
+- [Moth_thermal/remove_bg/Unsup_train.py](https://github.com/YunghuiHsu/Moth_Project/blob/main/Moth_thermal/remove_bg/Unsup_train.py)
+* 目的是讓非監督式方法可以將背景跟主體影像區分開來產生鱗翅目影像的遮罩(mask)
+* 取得主體255(白)，背景0(黑)的黑白mask 
+* 使用技術 : [Unsupervised Image Segmentation by Backpropagation](https://github.com/kanezaki/pytorch-unsupervised-segmentation) by kanezaki
+
+
 ## 2.2 監督式方法(Supervied Segmentation)
-- Modified from [`milesial/Pytorch-UNet`](https://github.com/milesial/Pytorch-UNet)
-- 訓練過程見　［Background Remove for Moth Project］（https://hackmd.io/@YungHuiHsu/Hkr3R3wV9） 
- 
+- Modified from [`milesial/Pytorch-UNet`](https://github.com/milesial/Pytorch-UNet) 
 ### Train
 - 以`非監督+後處理`過的MASK作為標籤(以像素為單位)
 
