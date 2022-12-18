@@ -3,9 +3,7 @@
 - 訓練過程見　［Background Remove for Moth Project］（https://hackmd.io/@YungHuiHsu/Hkr3R3wV9） 
  
 ### Train
-- [Sup_train_pytorch.py ](https://github.com/YunghuiHsu/Moth_Project/blob/92125e68f634816c04bc1bd9e0398605bc583b18/Moth_thermal/remove_bg/Sup_train_pytorch.py)
 - 以`非監督+後處理`過的MASK作為標籤(以像素為單位)
-
 
 ```
 > python Sup_train_pytorch.py -h
